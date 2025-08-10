@@ -1,3 +1,17 @@
-discord.py
-Flask
-python-dotenv
+# Core Discord bot library
+discord.py==2.3.2
+
+# For environment variable management
+python-dotenv==1.0.0
+
+# For async HTTP requests (if you're pinging uptime services or APIs)
+aiohttp==3.9.5
+
+# For scheduling tasks like birthday reminders
+apscheduler==3.10.4
+
+# Optional: If you're using rich logging or embeds
+rich==13.7.0
+
+# Optional: If you're doing any date/time parsing
+pendulum==3.0.0
