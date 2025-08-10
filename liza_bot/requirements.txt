@@ -18,3 +18,5 @@ rich==13.7.0
 
 # Optional: For timezone-aware scheduling
 pendulum==3.0.0
+
+requests==2.31.0
