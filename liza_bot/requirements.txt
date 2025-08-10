@@ -4,14 +4,17 @@ discord.py==2.3.2
 # For environment variable management
 python-dotenv==1.0.0
 
-# For async HTTP requests (if you're pinging uptime services or APIs)
+# For async HTTP requests (e.g., keep-alive pings)
 aiohttp==3.9.5
 
 # For scheduling tasks like birthday reminders
 apscheduler==3.10.4
 
-# Optional: If you're using rich logging or embeds
+# For lightweight web server (used in keep-alive or Railway web service detection)
+flask==3.0.0
+
+# Optional: For pretty logging/debugging
 rich==13.7.0
 
-# Optional: If you're doing any date/time parsing
+# Optional: For timezone-aware scheduling
 pendulum==3.0.0
