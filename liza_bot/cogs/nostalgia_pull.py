@@ -25,7 +25,7 @@ class NostalgiaCog(commands.Cog):
         await self._run_nostalgia_pull(interaction)
 
     async def _run_nostalgia_pull(self, source):
-        one_year_ago = datetime.datetime.utcnow() - datetime.timedelta(days=365)
+        one_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=365)
         pulled_message = None
         scanned_channels = 0
 
