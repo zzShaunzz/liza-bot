@@ -12,7 +12,7 @@ print("[NostalgiaCog] nostalgia_pull.py was imported.")
 MAX_CHANNELS = 25
 LOG_FILE = "nostalgia_log.json"
 ALLOWED_CHANNEL_ID = 1399117366926770267  # #bots-general
-CONTEXT_TIME_WINDOW = datetime.timedelta(minutes=5)
+CONTEXT_TIME_WINDOW = datetime.timedelta(minutes=20)
 
 class NostalgiaCog(commands.Cog):
     def __init__(self, bot):
@@ -72,7 +72,7 @@ class NostalgiaCog(commands.Cog):
         self.pulled_ids.add(str(pulled_message.id))
         self.save_pulled_ids()
 
-        # Get surrounding messages within ±5 minutes
+        # Get surrounding messages within ±20 minutes
         context_messages = []
         try:
             async for msg in pulled_message.channel.history(limit=100, around=pulled_message.created_at):
@@ -114,20 +114,29 @@ class NostalgiaCog(commands.Cog):
         keywords = []
 
         for msg in surrounding:
-            words = re.findall(r"\b\w+\b", msg.content.lower())
-            keywords.extend([w for w in words if len(w) > 3 and not w.startswith("http")])
+            # Remove emojis, URLs, mentions, and long numeric tokens
+            cleaned = re.sub(r"<a?:\w+:\d+>", "", msg.content)  # emojis
+            cleaned = re.sub(r"https?://\S+", "", cleaned)      # URLs
+            cleaned = re.sub(r"<@\d+>", "", cleaned)            # mentions
+            cleaned = re.sub(r"\b\d{6,}\b", "", cleaned)        # long numbers
+            words = re.findall(r"\b\w+\b", cleaned.lower())
+            keywords.extend([w for w in words if len(w) > 3])
 
         keyword_freq = {}
         for word in keywords:
             keyword_freq[word] = keyword_freq.get(word, 0) + 1
 
         top_keywords = sorted(keyword_freq.items(), key=lambda x: x[1], reverse=True)[:3]
-        topic = ", ".join([kw for kw, _ in top_keywords]) if top_keywords else "various things"
+        topic = ", ".join([kw for kw, _ in top_keywords])
 
-        if participants:
-            return f"🧠 Around this time, {author} was chatting with {', '.join(participants)}. The topic seemed to revolve around {topic}."
+        if participants and topic:
+            return f"🧠 Around this time, {author} was chatting with {', '.join(participants)} about {topic}."
+        elif participants:
+            return f"🧠 {author} was part of a brief exchange with {', '.join(participants)}."
+        elif topic:
+            return f"📜 This message from {author} came during a quiet moment, focused on {topic}."
         else:
-            return f"📜 This message from {author} came during a quiet moment, mostly focused on {topic}."
+            return f"📜 A reflective moment from {author}, with little else around it."
 
     def load_pulled_ids(self):
         if not os.path.exists(LOG_FILE):
