@@ -78,12 +78,15 @@ class NostalgiaCog(commands.Cog):
 
         context_summary = self.generate_context(pulled_message, context_messages)
 
+        message_link = f"https://discord.com/channels/{pulled_message.guild.id}/{pulled_message.channel.id}/{pulled_message.id}"
+
         embed = discord.Embed(
             title="📦 Nostalgia Pull",
             description=f"**From:** {pulled_message.author.mention}\n**Channel:** {pulled_message.channel.mention}\n\n{pulled_message.content}",
             timestamp=pulled_message.created_at,
             color=discord.Color.gold()
         )
+        embed.add_field(name="🔗 Jump to Message", value=f"[Click here to view it]({message_link})", inline=False)
         embed.set_footer(text="A memory from the past...")
 
         if isinstance(source, commands.Context):
