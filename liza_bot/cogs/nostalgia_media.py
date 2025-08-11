@@ -205,4 +205,4 @@ class NostalgiaMediaCog(commands.Cog):
 
     def save_pulled_ids(self):
         with open(LOG_FILE, "w") as f:
-            json.dump(list(self.pulled_ids),
+            json.dump(list(self.pulled_ids), f, indent=2)
