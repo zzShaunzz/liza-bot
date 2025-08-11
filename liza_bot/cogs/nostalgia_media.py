@@ -13,12 +13,18 @@ MAX_CHANNELS = 25
 LOG_FILE = "nostalgia_media_log.json"
 ALLOWED_CHANNEL_ID = 1399117366926770267  # #bots-general
 EXCLUDED_CATEGORY_ID = 1265093508595843193
+EXCLUDED_CHANNEL_IDS = {1398892088984076368}  # starboard
 CONTEXT_TIME_WINDOW = datetime.timedelta(minutes=20)
 
 MEDIA_DOMAINS = [
     "drive.google.com", "photos.google.com", "imgur.com",
     "tenor.com", "giphy.com", "media.discordapp.net", "cdn.discordapp.com"
 ]
+
+class JumpToMessageView(discord.ui.View):
+    def __init__(self, url: str):
+        super().__init__()
+        self.add_item(discord.ui.Button(label="Jump to Message", url=url, style=discord.ButtonStyle.link))
 
 class NostalgiaMediaCog(commands.Cog):
     def __init__(self, bot):
@@ -42,11 +48,30 @@ class NostalgiaMediaCog(commands.Cog):
         await interaction.response.defer(thinking=True)
         await self._run_nostalgia_media(interaction)
 
-    async def _run_nostalgia_media(self, source):
+    @commands.command(name="nostalgiavideo")
+    async def nostalgiavideo_prefix(self, ctx: commands.Context):
+        if ctx.channel.id != ALLOWED_CHANNEL_ID:
+            await ctx.send("❌ This command can only be used in <#1399117366926770267>.")
+            return
+        async with ctx.typing():
+            await self._run_nostalgia_media(ctx, media_type="video")
+
+    @app_commands.command(name="nostalgiavideo", description="Pull a video message from at least 6 months ago.")
+    async def nostalgiavideo_slash(self, interaction: discord.Interaction):
+        if interaction.channel.id != ALLOWED_CHANNEL_ID:
+            await interaction.response.send_message("❌ This command can only be used in <#1399117366926770267>.", ephemeral=True)
+            return
+        await interaction.response.defer(thinking=True)
+        await self._run_nostalgia_media(interaction, media_type="video")
+
+    async def _run_nostalgia_media(self, source, media_type=None):
         six_months_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=182)
         eligible_messages = []
 
-        channels = [ch for ch in source.guild.text_channels if ch.category_id != EXCLUDED_CATEGORY_ID]
+        channels = [
+            ch for ch in source.guild.text_channels
+            if ch.category_id != EXCLUDED_CATEGORY_ID and ch.id not in EXCLUDED_CHANNEL_IDS
+        ]
         random.shuffle(channels)
         scanned_channels = 0
 
@@ -61,17 +86,18 @@ class NostalgiaMediaCog(commands.Cog):
                         msg.created_at < six_months_ago
                         and not msg.author.bot
                         and str(msg.id) not in self.pulled_ids
-                        and self.contains_media(msg)
+                        and self.contains_media(msg, media_type)
                     ):
                         eligible_messages.append(msg)
             except discord.Forbidden:
                 continue
 
         if not eligible_messages:
+            response = "😔 Couldn't find any media messages older than 6 months."
             if isinstance(source, commands.Context):
-                await source.send("😔 Couldn't find any media messages older than 6 months.")
+                await source.send(response)
             else:
-                await source.followup.send("😔 Couldn't find any media messages older than 6 months.")
+                await source.followup.send(response)
             return
 
         pulled_message = random.choice(eligible_messages)
@@ -106,7 +132,6 @@ class NostalgiaMediaCog(commands.Cog):
             timestamp=pulled_message.created_at,
             color=discord.Color.blue()
         )
-        embed.add_field(name="🔗 Jump to Message", value=f"[Click here to view it]({message_link})", inline=False)
         embed.set_footer(text="A visual memory from the past...")
 
         # Show media visually
@@ -123,16 +148,25 @@ class NostalgiaMediaCog(commands.Cog):
                     embed.set_image(url=url)
                     break
 
-        if isinstance(source, commands.Context):
-            await source.send(content=context_summary, embed=embed)
-        else:
-            await source.followup.send(content=context_summary, embed=embed)
+        view = JumpToMessageView(url=message_link)
 
-    def contains_media(self, msg: discord.Message) -> bool:
-        if msg.attachments:
-            return True
-        urls = re.findall(r"https?://\S+", msg.content)
-        return any(domain in url for url in urls for domain in MEDIA_DOMAINS)
+        if isinstance(source, commands.Context):
+            await source.send(content=context_summary, embed=embed, view=view)
+        else:
+            await source.followup.send(content=context_summary, embed=embed, view=view)
+
+    def contains_media(self, msg: discord.Message, media_type=None) -> bool:
+        if media_type == "video":
+            for attachment in msg.attachments:
+                if attachment.content_type and "video" in attachment.content_type:
+                    return True
+            urls = re.findall(r"https?://\S+", msg.content)
+            return any("video" in url or "mp4" in url for url in urls)
+        else:
+            if msg.attachments:
+                return True
+            urls = re.findall(r"https?://\S+", msg.content)
+            return any(domain in url for url in urls for domain in MEDIA_DOMAINS)
 
     def generate_context(self, message: discord.Message, surrounding: list[discord.Message]) -> str:
         author = message.author.display_name
@@ -171,8 +205,4 @@ class NostalgiaMediaCog(commands.Cog):
 
     def save_pulled_ids(self):
         with open(LOG_FILE, "w") as f:
-            json.dump(list(self.pulled_ids), f, indent=2)
-
-# Required setup function for cog loading
-async def setup(bot):
-    await bot.add_cog(NostalgiaMediaCog(bot))
+            json.dump(list(self.pulled_ids),
