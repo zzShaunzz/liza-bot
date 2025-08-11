@@ -217,7 +217,7 @@ async def on_guild_channel_pins_update(channel, _):
 @bot.event
 async def on_ready():
     await tree.sync()
-    for cog in ["cogs.birthday", "cogs.liza_ai", "cogs.message", "cogs.funfact", "cogs.verify"]:
+    for cog in ["cogs.birthday", "cogs.liza_ai", "cogs.message", "cogs.funfact", "cogs.verify", "cogs.nostalgia_pull"]:
         try:
             await bot.load_extension(cog)
             print(f"✅ Loaded {cog}")
