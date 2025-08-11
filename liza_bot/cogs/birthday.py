@@ -4,6 +4,7 @@ from discord import app_commands
 import datetime
 import json
 import os
+import pytz  # ✅ Added for timezone support
 
 print("[BirthdayCog] birthday.py was imported.")
 
@@ -36,14 +37,15 @@ class BirthdayCog(commands.Cog):
     def cog_unload(self):
         self.check_birthdays.cancel()
 
-    @tasks.loop(time=datetime.time(hour=0, minute=0))  # ✅ Runs daily at midnight UTC
+    @tasks.loop(time=datetime.time(hour=0, minute=0, tzinfo=pytz.timezone("US/Pacific")))  # ✅ Runs daily at midnight PST
     async def check_birthdays(self):
         await self.bot.wait_until_ready()
-        today = datetime.datetime.utcnow().date()
+        pst = pytz.timezone("US/Pacific")
+        today = datetime.datetime.now(pst).date()
         tomorrow = today + datetime.timedelta(days=1)
         date_key = tomorrow.strftime("%Y-%m-%d")
 
-        print(f"[BirthdayCog] Checking for birthdays on {date_key}...")
+        print(f"[BirthdayCog] Checking for birthdays on {date_key} (PST)...")
 
         announced = self.load_announced()
 
@@ -72,7 +74,8 @@ class BirthdayCog(commands.Cog):
             json.dump(data, f, indent=2)
 
     def get_closest_birthday(self):
-        today = datetime.datetime.utcnow().date()
+        pst = pytz.timezone("US/Pacific")
+        today = datetime.datetime.now(pst).date()
         soonest_name = None
         min_days = 366
 
@@ -93,7 +96,8 @@ class BirthdayCog(commands.Cog):
         return soonest_name, min_days
 
     def get_last_birthday(self):
-        today = datetime.datetime.utcnow().date()
+        pst = pytz.timezone("US/Pacific")
+        today = datetime.datetime.now(pst).date()
         latest_name = None
         min_days = 366
 
