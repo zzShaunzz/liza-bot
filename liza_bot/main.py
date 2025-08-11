@@ -222,7 +222,8 @@ async def on_ready():
         "cogs.message",
         "cogs.funfact",
         "cogs.verify",
-        "cogs.nostalgia_pull"
+        "cogs.nostalgia_pull",
+        "cogs.nostalgia_media"
     ]
 
     for cog in cogs_to_load:
