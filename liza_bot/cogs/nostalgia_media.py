@@ -206,3 +206,18 @@ class NostalgiaMediaCog(commands.Cog):
     def save_pulled_ids(self):
         with open(LOG_FILE, "w") as f:
             json.dump(list(self.pulled_ids), f, indent=2)
+
+# Optional: any final helper functions or cleanup code above this line
+
+# Make sure your cog class is defined like this:
+class NostalgiaMedia(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        # your init logic here
+
+    # your commands, listeners, helper methods, etc.
+
+# This must be at the very bottom of the file
+async def setup(bot):
+    await bot.add_cog(NostalgiaMedia(bot))
+
