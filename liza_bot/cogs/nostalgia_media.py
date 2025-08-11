@@ -12,6 +12,7 @@ print("[NostalgiaMediaCog] nostalgia_media.py was imported.")
 MAX_CHANNELS = 25
 LOG_FILE = "nostalgia_media_log.json"
 ALLOWED_CHANNEL_ID = 1399117366926770267  # #bots-general
+EXCLUDED_CATEGORY_ID = 1265093508595843193
 CONTEXT_TIME_WINDOW = datetime.timedelta(minutes=20)
 
 MEDIA_DOMAINS = [
@@ -33,7 +34,7 @@ class NostalgiaMediaCog(commands.Cog):
         async with ctx.typing():
             await self._run_nostalgia_media(ctx)
 
-    @app_commands.command(name="nostalgiamedia", description="Pull a media message from at least a year ago.")
+    @app_commands.command(name="nostalgiamedia", description="Pull a media message from at least 6 months ago.")
     async def nostalgiamedia_slash(self, interaction: discord.Interaction):
         if interaction.channel.id != ALLOWED_CHANNEL_ID:
             await interaction.response.send_message("❌ This command can only be used in <#1399117366926770267>.", ephemeral=True)
@@ -42,10 +43,10 @@ class NostalgiaMediaCog(commands.Cog):
         await self._run_nostalgia_media(interaction)
 
     async def _run_nostalgia_media(self, source):
-        one_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=365)
+        six_months_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=182)
         eligible_messages = []
 
-        channels = list(source.guild.text_channels)
+        channels = [ch for ch in source.guild.text_channels if ch.category_id != EXCLUDED_CATEGORY_ID]
         random.shuffle(channels)
         scanned_channels = 0
 
@@ -57,7 +58,7 @@ class NostalgiaMediaCog(commands.Cog):
             try:
                 async for msg in channel.history(oldest_first=True):
                     if (
-                        msg.created_at < one_year_ago
+                        msg.created_at < six_months_ago
                         and not msg.author.bot
                         and str(msg.id) not in self.pulled_ids
                         and self.contains_media(msg)
@@ -68,9 +69,9 @@ class NostalgiaMediaCog(commands.Cog):
 
         if not eligible_messages:
             if isinstance(source, commands.Context):
-                await source.send("😔 Couldn't find any media messages older than a year.")
+                await source.send("😔 Couldn't find any media messages older than 6 months.")
             else:
-                await source.followup.send("😔 Couldn't find any media messages older than a year.")
+                await source.followup.send("😔 Couldn't find any media messages older than 6 months.")
             return
 
         pulled_message = random.choice(eligible_messages)
