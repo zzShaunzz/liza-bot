@@ -108,6 +108,20 @@ class NostalgiaMediaCog(commands.Cog):
         embed.add_field(name="🔗 Jump to Message", value=f"[Click here to view it]({message_link})", inline=False)
         embed.set_footer(text="A visual memory from the past...")
 
+        # Show media visually
+        if pulled_message.attachments:
+            first_attachment = pulled_message.attachments[0]
+            if first_attachment.content_type and "image" in first_attachment.content_type:
+                embed.set_image(url=first_attachment.url)
+            elif first_attachment.content_type and "video" in first_attachment.content_type:
+                embed.set_video(url=first_attachment.url)
+        elif pulled_message.content:
+            urls = re.findall(r"https?://\S+", pulled_message.content)
+            for url in urls:
+                if any(domain in url for domain in MEDIA_DOMAINS):
+                    embed.set_image(url=url)
+                    break
+
         if isinstance(source, commands.Context):
             await source.send(content=context_summary, embed=embed)
         else:
