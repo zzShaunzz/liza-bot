@@ -14,6 +14,11 @@ LOG_FILE = "nostalgia_log.json"
 ALLOWED_CHANNEL_ID = 1399117366926770267  # #bots-general
 CONTEXT_TIME_WINDOW = datetime.timedelta(minutes=20)
 
+class JumpToMessageView(discord.ui.View):
+    def __init__(self, url: str):
+        super().__init__()
+        self.add_item(discord.ui.Button(label="Jump to original message", url=url, style=discord.ButtonStyle.link))
+
 class NostalgiaCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -62,10 +67,11 @@ class NostalgiaCog(commands.Cog):
                 continue
 
         if not eligible_messages:
+            response = "😔 Couldn't find any new messages older than a year. Try again later!"
             if isinstance(source, commands.Context):
-                await source.send("😔 Couldn't find any new messages older than a year. Try again later!")
+                await source.send(response)
             else:
-                await source.followup.send("😔 Couldn't find any new messages older than a year. Try again later!")
+                await source.followup.send(response)
             return
 
         pulled_message = random.choice(eligible_messages)
@@ -100,13 +106,14 @@ class NostalgiaCog(commands.Cog):
             timestamp=pulled_message.created_at,
             color=discord.Color.gold()
         )
-        embed.add_field(name="🔗 Jump to Message", value=f"[Click here to view it]({message_link})", inline=False)
         embed.set_footer(text="A memory from the past...")
 
+        view = JumpToMessageView(url=message_link)
+
         if isinstance(source, commands.Context):
-            await source.send(content=context_summary, embed=embed)
+            await source.send(content=context_summary, embed=embed, view=view)
         else:
-            await source.followup.send(content=context_summary, embed=embed)
+            await source.followup.send(content=context_summary, embed=embed, view=view)
 
     def generate_context(self, message: discord.Message, surrounding: list[discord.Message]) -> str:
         author = message.author.display_name
@@ -114,7 +121,6 @@ class NostalgiaCog(commands.Cog):
         keywords = []
 
         for msg in surrounding:
-            # Remove emojis, URLs, mentions, and long numeric tokens
             cleaned = re.sub(r"<a?:\w+:\d+>", "", msg.content)  # emojis
             cleaned = re.sub(r"https?://\S+", "", cleaned)      # URLs
             cleaned = re.sub(r"<@\d+>", "", cleaned)            # mentions
