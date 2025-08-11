@@ -3,15 +3,20 @@ from discord.ext import commands
 from discord import app_commands
 import datetime
 import re
+import json
+import os
+import random
 
 print("[NostalgiaCog] nostalgia_pull.py was imported.")
 
 MAX_CHANNELS = 25
-CONTEXT_RANGE = 5  # Number of messages before/after to analyze
+CONTEXT_RANGE = 5
+LOG_FILE = "nostalgia_log.json"
 
 class NostalgiaCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.pulled_ids = self.load_pulled_ids()
         print("[NostalgiaCog] Loaded.")
 
     @commands.command(name="nostalgiapull")
@@ -26,7 +31,7 @@ class NostalgiaCog(commands.Cog):
 
     async def _run_nostalgia_pull(self, source):
         one_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=365)
-        pulled_message = None
+        eligible_messages = []
         scanned_channels = 0
 
         for channel in source.guild.text_channels:
@@ -36,20 +41,28 @@ class NostalgiaCog(commands.Cog):
 
             try:
                 async for msg in channel.history(oldest_first=True):
-                    if msg.created_at < one_year_ago and not msg.author.bot and msg.content:
-                        pulled_message = msg
-                        break
-                if pulled_message:
+                    if (
+                        msg.created_at < one_year_ago
+                        and not msg.author.bot
+                        and msg.content
+                        and str(msg.id) not in self.pulled_ids
+                    ):
+                        eligible_messages.append(msg)
+                if eligible_messages:
                     break
             except discord.Forbidden:
                 continue
 
-        if not pulled_message:
+        if not eligible_messages:
             if isinstance(source, commands.Context):
-                await source.send("😔 Couldn't find any messages older than a year. Try again later!")
+                await source.send("😔 Couldn't find any new messages older than a year. Try again later!")
             else:
-                await source.followup.send("😔 Couldn't find any messages older than a year. Try again later!")
+                await source.followup.send("😔 Couldn't find any new messages older than a year. Try again later!")
             return
+
+        pulled_message = random.choice(eligible_messages)
+        self.pulled_ids.add(str(pulled_message.id))
+        self.save_pulled_ids()
 
         # Get surrounding messages for context
         context_messages = []
@@ -98,6 +111,16 @@ class NostalgiaCog(commands.Cog):
             return f"🧠 Around this time, {author} was part of a lively discussion involving {', '.join(participants)}. The topic seemed to revolve around {topic}."
         else:
             return f"📜 This message from {author} came during a quiet moment, mostly focused on {topic}."
+
+    def load_pulled_ids(self):
+        if not os.path.exists(LOG_FILE):
+            return set()
+        with open(LOG_FILE, "r") as f:
+            return set(json.load(f))
+
+    def save_pulled_ids(self):
+        with open(LOG_FILE, "w") as f:
+            json.dump(list(self.pulled_ids), f, indent=2)
 
 # Required setup function for cog loading
 async def setup(bot):
