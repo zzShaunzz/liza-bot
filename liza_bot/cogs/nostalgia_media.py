@@ -104,7 +104,6 @@ class NostalgiaMediaCog(commands.Cog):
         self.pulled_ids.add(str(pulled_message.id))
         self.save_pulled_ids()
 
-        # Get surrounding messages within ±20 minutes
         context_messages = []
         try:
             async for msg in pulled_message.channel.history(limit=100, around=pulled_message.created_at):
@@ -134,7 +133,6 @@ class NostalgiaMediaCog(commands.Cog):
         )
         embed.set_footer(text="A visual memory from the past...")
 
-        # Show media visually
         if pulled_message.attachments:
             first_attachment = pulled_message.attachments[0]
             if first_attachment.content_type and "image" in first_attachment.content_type:
@@ -207,17 +205,4 @@ class NostalgiaMediaCog(commands.Cog):
         with open(LOG_FILE, "w") as f:
             json.dump(list(self.pulled_ids), f, indent=2)
 
-# Optional: any final helper functions or cleanup code above this line
-
-# Make sure your cog class is defined like this:
-class NostalgiaMedia(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        # your init logic here
-
-    # your commands, listeners, helper methods, etc.
-
-# This must be at the very bottom of the file
-async def setup(bot):
-    await bot.add_cog(NostalgiaMedia(bot))
-
+#
