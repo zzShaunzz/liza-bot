@@ -27,7 +27,7 @@ class JumpToMessageView(discord.ui.View):
         self.add_item(discord.ui.Button(label="Jump to Message", url=url, style=discord.ButtonStyle.link))
 
 class NostalgiaMediaCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.pulled_ids = self.load_pulled_ids()
         print("[NostalgiaMediaCog] Loaded.")
@@ -126,7 +126,7 @@ class NostalgiaMediaCog(commands.Cog):
             description=(
                 f"**From:** {pulled_message.author.mention}\n"
                 f"**Channel:** {pulled_message.channel.mention}\n\n"
-                f"**{pulled_message.content or '[Media message with no text]'}**"
+                f"{pulled_message.content or '[Media message with no text]'}"
             ),
             timestamp=pulled_message.created_at,
             color=discord.Color.blue()
@@ -138,7 +138,7 @@ class NostalgiaMediaCog(commands.Cog):
             if first_attachment.content_type and "image" in first_attachment.content_type:
                 embed.set_image(url=first_attachment.url)
             elif first_attachment.content_type and "video" in first_attachment.content_type:
-                embed.set_video(url=first_attachment.url)
+                embed.description += f"\n\n🎬 [Watch Video]({first_attachment.url})"
         elif pulled_message.content:
             urls = re.findall(r"https?://\S+", pulled_message.content)
             for url in urls:
@@ -195,7 +195,7 @@ class NostalgiaMediaCog(commands.Cog):
         else:
             return f"📸 A quiet media moment from {author}, with little else around it."
 
-    def load_pulled_ids(self):
+    def load_pulled_ids(self) -> set[str]:
         if not os.path.exists(LOG_FILE):
             return set()
         with open(LOG_FILE, "r") as f:
@@ -205,5 +205,6 @@ class NostalgiaMediaCog(commands.Cog):
         with open(LOG_FILE, "w") as f:
             json.dump(list(self.pulled_ids), f, indent=2)
 
+# ✅ Required setup function
 async def setup(bot: commands.Bot):
     await bot.add_cog(NostalgiaMediaCog(bot))
