@@ -205,4 +205,5 @@ class NostalgiaMediaCog(commands.Cog):
         with open(LOG_FILE, "w") as f:
             json.dump(list(self.pulled_ids), f, indent=2)
 
-#
+async def setup(bot: commands.Bot):
+    await bot.add_cog(NostalgiaMediaCog(bot))
