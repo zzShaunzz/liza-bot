@@ -118,7 +118,6 @@ class NostalgiaMediaCog(commands.Cog):
             pass
 
         context_summary = self.generate_context(pulled_message, context_messages)
-
         message_link = f"https://discord.com/channels/{pulled_message.guild.id}/{pulled_message.channel.id}/{pulled_message.id}"
 
         embed = discord.Embed(
@@ -138,7 +137,13 @@ class NostalgiaMediaCog(commands.Cog):
             if first_attachment.content_type and "image" in first_attachment.content_type:
                 embed.set_image(url=first_attachment.url)
             elif first_attachment.content_type and "video" in first_attachment.content_type:
-                embed.description += f"\n\n🎬 [Watch Video]({first_attachment.url})"
+                video_url = first_attachment.url
+                if media_type == "video":
+                    # Send video visually so Discord renders it inline
+                    if isinstance(source, commands.Context):
+                        await source.send(video_url)
+                    else:
+                        await source.followup.send(video_url)
         elif pulled_message.content:
             urls = re.findall(r"https?://\S+", pulled_message.content)
             for url in urls:
@@ -205,6 +210,6 @@ class NostalgiaMediaCog(commands.Cog):
         with open(LOG_FILE, "w") as f:
             json.dump(list(self.pulled_ids), f, indent=2)
 
-# ✅ Required setup function
+# Required setup function for loading the cog
 async def setup(bot: commands.Bot):
     await bot.add_cog(NostalgiaMediaCog(bot))
