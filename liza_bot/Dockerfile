@@ -1,23 +1,20 @@
-# Use official Python image
+# Use a lightweight Python base image
 FROM python:3.11-slim
 
-# Optional: Install Rust if you're using maturin or Rust-based dependencies
+# Optional: install Rust if you're using maturin or Rust-based dependencies
 RUN apt-get update && apt-get install -y curl build-essential
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Set working directory
+# Set working directory inside the container
 WORKDIR /app
 
-# Copy bot code and dependencies
-COPY bot/ .
+# Copy your bot code from the liza_bot folder
+COPY liza_bot/ .
 
 # Install Python dependencies
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Optional: Build Rust extensions if needed
-# RUN maturin develop  # Uncomment if you're using maturin
-
-# Start the bot
+# Start your bot
 CMD ["python", "main.py"]
