@@ -227,7 +227,7 @@ async def on_ready():
         "cogs.game_state"
         "cogs.story_engine"
         "cogs.utils"
-        "cogs.main2.py"
+        "cogs.zombie_game"
     ]
 
     for cog in cogs_to_load:
