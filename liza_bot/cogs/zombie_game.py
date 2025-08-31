@@ -1,5 +1,6 @@
 import discord, asyncio, os, requests, random
 from discord.ext import commands
+from discord import app_commands
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,8 +27,8 @@ class GameState:
             "helpful": {name: 0 for name in CHARACTERS},
             "sinister": {name: 0 for name in CHARACTERS},
             "resourceful": {name: 0 for name in CHARACTERS},
-            "bonds": {},       # (name1, name2): score
-            "conflicts": {},   # (name1, name2): score
+            "bonds": {},
+            "conflicts": {},
             "dignified": {name: 100 for name in CHARACTERS}
         }
 
@@ -85,7 +86,6 @@ def extract_options(text):
     return options if len(options) == 2 else ["Option A", "Option B"]
 
 def update_stats(g: GameState):
-    # Simulate stat changes per round
     for name in random.sample(g.alive, k=random.randint(2, 5)):
         g.stats["helpful"][name] += random.randint(1, 3)
     for name in random.sample(g.alive, k=random.randint(1, 3)):
@@ -112,28 +112,28 @@ class ZombieGame(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="lizazombie")
-    async def lizazombie_text(self, ctx):
-        if ctx.channel.id != ZOMBIE_CHANNEL_ID:
-            await ctx.send("❌ This command can only be run in the designated game channel.")
+    @app_commands.command(name="lizazombie", description="Start the zombie survival RPG with Liza")
+    async def lizazombie_slash(self, interaction: discord.Interaction):
+        if interaction.channel.id != ZOMBIE_CHANNEL_ID:
+            await interaction.response.send_message("❌ This command can only be run in the designated game channel.", ephemeral=True)
             return
         if is_active():
-            await ctx.send("Game is currently in process.")
+            await interaction.response.send_message("Game is currently in process.", ephemeral=True)
             return
-        start_game(ctx.author.id)
-        await ctx.send("🧟‍♂️ Zombie survival game started! Round 1 begins in 5 seconds...")
+        start_game(interaction.user.id)
+        await interaction.response.send_message("🧟‍♀️ Zombie survival game started! Round 1 begins in 5 seconds...")
         await asyncio.sleep(5)
-        await self.run_round(ctx)
+        await self.run_round(interaction.channel)
 
-    async def run_round(self, ctx):
+    async def run_round(self, channel):
         g = active_game
         g.round += 1
 
         story = await generate_story()
         g.options = extract_options(story)
 
-        await ctx.send(f"**Round {g.round}**\n{story}")
-        vote_msg = await ctx.send("Vote now! ⏳ 30 seconds...\nReact with 1️⃣ or 2️⃣")
+        await channel.send(f"**Round {g.round}**\n{story}")
+        vote_msg = await channel.send("Vote now! ⏳ 30 seconds...\nReact with 1️⃣ or 2️⃣")
         await vote_msg.add_reaction("1️⃣")
         await vote_msg.add_reaction("2️⃣")
 
@@ -141,7 +141,7 @@ class ZombieGame(commands.Cog):
         votes = await tally_votes(vote_msg)
 
         if votes["1️⃣"] == 0 and votes["2️⃣"] == 0:
-            await ctx.send("No votes cast. Game over.")
+            await channel.send("No votes cast. Game over.")
             end_game()
             return
 
@@ -149,7 +149,7 @@ class ZombieGame(commands.Cog):
         g.last_choice = choice
         g.last_events = f"The group chose: {choice}"
 
-        await ctx.send(f"Majority chose: **{choice}**")
+        await channel.send(f"Majority chose: **{choice}**")
         update_stats(g)
         await asyncio.sleep(3)
 
@@ -158,37 +158,40 @@ class ZombieGame(commands.Cog):
             g.alive.remove(name)
             g.dead.insert(0, name)
         if deaths:
-            await ctx.send(f"💀 The following characters died: {', '.join(deaths)}")
+            await channel.send(f"💀 The following characters died: {', '.join(deaths)}")
 
-        if len(g.alive) <= 3:
-            await ctx.send("⚠️ Only 3 survivors remain. Conflict intensifies...")
-        elif len(g.alive) == 1:
-            await ctx.send(f"🏆 {g.alive[0]} is the sole survivor!")
-            await self.end_summary(ctx)
+        # 🎯 Dynamic end threshold
+        if len(g.alive) <= random.randint(1, 5):
+            if len(g.alive) == 1:
+                await channel.send(f"🏆 {g.alive[0]} is the sole survivor!")
+            else:
+                await channel.send(f"🏁 Final survivors: {', '.join(g.alive)}")
+            await self.end_summary(channel)
             end_game()
             return
 
-        await self.run_round(ctx)
+        await self.run_round(channel)
 
-    async def end_summary(self, ctx):
+    async def end_summary(self, channel):
         g = active_game
-        await ctx.send("📜 **Game Summary**")
-        await ctx.send("🪦 Deaths (most recent first):\n" + "\n".join([f"• {name}" for name in g.dead]))
+        await channel.send("📜 **Game Summary**")
+        await channel.send("🪦 Deaths (most recent first):\n" + "\n".join([f"• {name}" for name in g.dead]))
 
-        await ctx.send("📊 **Final Stats**")
-        await ctx.send(f"🏅 Most helpful: {get_top_stat(g.stats['helpful'])}")
-        await ctx.send(f"😈 Most sinister: {get_top_stat(g.stats['sinister'])}")
-        await ctx.send(f"🔧 Most resourceful: {get_top_stat(g.stats['resourceful'])}")
+        await channel.send("📊 **Final Stats**")
+        await channel.send(f"🏅 Most helpful: {get_top_stat(g.stats['helpful'])}")
+        await channel.send(f"😈 Most sinister: {get_top_stat(g.stats['sinister'])}")
+        await channel.send(f"🔧 Most resourceful: {get_top_stat(g.stats['resourceful'])}")
 
         bonds = sorted(g.stats["bonds"].items(), key=lambda x: x[1], reverse=True)
         conflicts = sorted(g.stats["conflicts"].items(), key=lambda x: x[1], reverse=True)
 
         if bonds:
-            await ctx.send(f"🤝 Greatest bond: {bonds[0][0][0]} & {bonds[0][0][1]} ({bonds[0][1]} points)")
+            await channel.send(f"🤝 Greatest bond: {bonds[0][0][0]} & {bonds[0][0][1]} ({bonds[0][1]} points)")
         if conflicts:
-            await ctx.send(f"⚔️ Biggest opps: {conflicts[0][0][0]} vs {conflicts[0][0][1]} ({conflicts[0][1]} points)")
+            await channel.send(f"⚔️ Biggest opps: {conflicts[0][0][0]} vs {conflicts[0][0][1]} ({conflicts[0][1]} points)")
 
-        await ctx.send(f"🕊️ Most dignified: {get_top_stat(g.stats['dignified'])}")
+        await channel.send(f"🕊️ Most dignified: {get_top_stat(g.stats['dignified'])}")
 
 async def setup(bot):
     await bot.add_cog(ZombieGame(bot))
+    print("✅ ZombieGame cog loaded")
