@@ -224,9 +224,6 @@ async def on_ready():
         "cogs.verify",
         "cogs.nostalgia_pull",
         "cogs.nostalgia_media"
-        "cogs.game_state"
-        "cogs.story_engine"
-        "cogs.utils"
         "cogs.zombie_game"
     ]
 
