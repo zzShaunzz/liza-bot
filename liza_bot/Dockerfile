@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy bot code
-COPY liza_bot/ ./liza_bot/
+COPY . .
 
 # Copy requirements if present
 COPY requirements.txt .
