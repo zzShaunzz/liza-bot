@@ -223,7 +223,7 @@ async def on_ready():
         "cogs.funfact",
         "cogs.verify",
         "cogs.nostalgia_pull",
-        "cogs.nostalgia_media"
+        "cogs.nostalgia_media",
         "cogs.zombie_game"
     ]
 
