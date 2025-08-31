@@ -3,7 +3,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 load_dotenv()
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID"))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL = os.getenv("MODEL", "openrouter/mixtral")
 
@@ -114,7 +114,7 @@ class ZombieGame(commands.Cog):
 
     @commands.command(name="lizazombie")
     async def lizazombie_text(self, ctx):
-        if ctx.channel.id != CHANNEL_ID:
+        if ctx.channel.id != ZOMBIE_CHANNEL_ID:
             await ctx.send("❌ This command can only be run in the designated game channel.")
             return
         if is_active():
