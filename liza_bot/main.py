@@ -224,6 +224,10 @@ async def on_ready():
         "cogs.verify",
         "cogs.nostalgia_pull",
         "cogs.nostalgia_media"
+        "cogs.game_state"
+        "cogs.story_engine"
+        "cogs.utils"
+        "cogs.main2.py"
     ]
 
     for cog in cogs_to_load:
