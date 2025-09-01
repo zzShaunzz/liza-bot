@@ -40,21 +40,21 @@ CHARACTER_INFO = {
     "Noah Nainggolan": {
         "age": 18, "gender": "Male",
         "traits": ["physically capable", "fighter", "not a planner"],
-        "siblings": [],
+        "siblings": ["Kate Nainggolan", "Jill Nainggolan"],
         "likely_pairs": ["Gabe Muy", "Jill Nainggolan", "Kate Nainggolan", "Dylan Pastorin"],
         "likely_conflicts": ["Jill Nainggolan"]
     },
     "Jill Nainggolan": {
         "age": 16, "gender": "Female",
         "traits": ["conniving", "lucky", "swimmer"],
-        "siblings": ["Kate Nainggolan", "Nico Muy"],
+        "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
         "likely_conflicts": ["Aiden Muy"]
     },
     "Kate Nainggolan": {
         "age": 14, "gender": "Female",
         "traits": ["manipulative", "quick-witted", "enduring", "persuasive"],
-        "siblings": ["Jill Nainggolan", "Nico Muy"],
+        "siblings": ["Jill Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
         "likely_conflicts": ["Nico Muy"]
     },
@@ -89,7 +89,7 @@ CHARACTER_INFO = {
     "Nico Muy": {
         "age": 12, "gender": "Male",
         "traits": ["daring", "comical", "risk-taker", "needs guidance"],
-        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy", "Jill Nainggolan", "Kate Nainggolan"],
+        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"],
         "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
         "likely_conflicts": ["Ella Muy"]
     },
@@ -203,15 +203,16 @@ async def generate_ai_text(messages, temperature=0.9):
                     "model": MODEL,
                     "messages": messages,
                     "temperature": temperature
-                }
+                },
+                timeout=15
             )
             data = response.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             if content:
                 return content
             await asyncio.sleep(2 ** attempt)
-        except Exception as e:
-            logger.error(f"AI error: {e}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"AI request failed: {e}")
             await asyncio.sleep(2 ** attempt)
     return None
 
@@ -236,11 +237,9 @@ async def stream_text(message: discord.Message, full_text: str, chunk_size: int 
         await message.edit(content="⚠️ Failed to generate text.")
         return
     paragraphs = full_text.split("\n")
-    formatted = ""
-    for para in paragraphs:
-        if para.strip():
-            formatted += f"• {para.strip()}\n"
-    chunks = formatted.split()
+    formatted_lines = [f"• {line.strip()}" for line in paragraphs if line.strip()]
+    formatted_text = "\n".join(formatted_lines)
+    chunks = formatted_text.split()
     output = ""
     for i in range(0, len(chunks), chunk_size):
         if active_game and active_game.terminated:
@@ -371,7 +370,8 @@ class ZombieGame(commands.Cog):
             "1. Take a risky shortcut through the flooded subway.",
             "2. Barricade and wait for help, risking starvation."
         ]
-        choices_msg = await channel.send("🔀 **Choices**\n" + "\n".join(g.options))
+        choices_text = "🔀 **Choices**\n" + "\n".join(g.options)
+        choices_msg = await channel.send(choices_text)
         await choices_msg.add_reaction("1️⃣")
         await choices_msg.add_reaction("2️⃣")
         await countdown_message(choices_msg, 15, "⏳ Voting ends in...")
