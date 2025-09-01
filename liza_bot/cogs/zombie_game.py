@@ -34,8 +34,6 @@ def enforce_bullets(text: str) -> str:
     matches = re.findall(r"•\s*(.+?)(?=\s*•|$)", text, re.DOTALL)
     if matches:
         return "\n".join([f"• {line.strip()}" for line in matches if line.strip()])
-    
-    # Fallback: split into sentences if no bullets found
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     return "\n".join([f"• {s.strip()}" for s in sentences if s.strip()])
 
@@ -73,14 +71,14 @@ CHARACTER_INFO = {
         "traits": ["conniving", "lucky", "swimmer"],
         "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
-        "likely_conflicts": ["Aiden Muy"]
+        "likely_conflicts": ["Noah Nainggolan"]
     },
     "Kate Nainggolan": {
         "age": 14, "gender": "Female",
         "traits": ["manipulative", "quick-witted", "enduring", "persuasive"],
         "siblings": ["Jill Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
-        "likely_conflicts": ["Nico Muy"]
+        "likely_conflicts": ["Aiden Muy"]
     },
     "Vivian Muy": {
         "age": 18, "gender": "Female",
@@ -94,28 +92,28 @@ CHARACTER_INFO = {
         "traits": ["strong", "peacekeeper", "withdraws under pressure", "hand-to-hand expert"],
         "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
-        "likely_conflicts": ["Shaun Sadsarin"]
+        "likely_conflicts": ["Addison Sadsarin"]
     },
     "Aiden Muy": {
         "age": 14, "gender": "Male",
         "traits": ["agile", "crafty", "chef", "mental reader"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
-        "likely_conflicts": ["Addison Sadsarin"]
+        "likely_conflicts": ["Ella Muy"]
     },
     "Ella Muy": {
         "age": 11, "gender": "Female",
         "traits": ["physically reliant", "luckiest"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"],
         "likely_pairs": ["Addison Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
-        "likely_conflicts": ["Nico Muy"]
+        "likely_conflicts": ["Shaun Sadsarin"]
     },
     "Nico Muy": {
         "age": 12, "gender": "Male",
         "traits": ["daring", "comical", "risk-taker", "needs guidance"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"],
         "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
-        "likely_conflicts": ["Ella Muy"]
+        "likely_conflicts": ["Vivian Muy"]
     },
     "Jordan": {
         "age": 13, "gender": "Male",
