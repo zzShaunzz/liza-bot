@@ -8,7 +8,7 @@ import asyncio
 RULES_MESSAGE_ID = int(os.environ.get("RULES_MESSAGE_ID", 0))
 RULES_CHANNEL_ID = int(os.environ.get("RULES_CHANNEL_ID", 0))
 VERIFIED_ROLE_ID = int(os.environ.get("VERIFIED_ROLE_ID", 0))
-OWNER_ID = int(os.environ.get("OWNER_ID", 0))  # Optional: restrict !auditverify to owner
+OWNER_ID = int(os.environ.get("OWNER_ID", 0))
 BUILD_TAG = os.environ.get("BUILD_TAG", "dev")  # For !version command
 
 class VerifyCog(commands.Cog):
@@ -140,7 +140,7 @@ class VerifyCog(commands.Cog):
             except Exception as e:
                 logging.warning(f"[VerifyCog] ⚠️ Failed to remove role: {e}")
 
-# ✅ Safe async setup function
+# ✅ Required setup function for Discord.py v2+
 async def setup(bot: commands.Bot):
     cog = VerifyCog(bot)
     await bot.add_cog(cog)
