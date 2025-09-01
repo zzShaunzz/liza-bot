@@ -169,7 +169,8 @@ def build_intro_context():
     context += (
         "Write a vivid scene describing what each character is doing at the start of this round. "
         "Include emotional tension, physical actions, and hints of interpersonal dynamics. "
-        "Do not describe any new threat or dilemma yet — just set the scene.\n
+        "Do not describe any new threat or dilemma yet — just set the scene.\n"
+    )
 
 async def generate_intro_scene(retry=False):
     prompt = build_intro_context()
