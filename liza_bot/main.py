@@ -288,19 +288,22 @@ async def load_cogs():
             print(f"❌ Failed to load {cog}:\n{traceback.format_exc()}")
 
 # 🚀 Startup Sequence
-async def startup():
-    keep_alive()  # Start Flask server in background
-    await load_cogs()
+class MyBot(commands.Bot):
+    async def setup_hook(self):
+        keep_alive()  # Start Flask server in background
 
-    try:
-        synced = await bot.tree.sync()
-        print(f"🌐 Synced {len(synced)} slash commands.")
-    except Exception as e:
-        print(f"⚠️ Failed to sync slash commands: {e}")
+        # Load cogs
+        await load_cogs()
 
-    print("🚀 Starting bot...")
-    await bot.start(TOKEN)
+        # Sync slash commands safely
+        try:
+            synced = await self.tree.sync()
+            print(f"🌐 Synced {len(synced)} slash commands.")
+        except Exception as e:
+            print(f"⚠️ Failed to sync slash commands: {e}")
 
 # 🏁 Launch Bot
-if __name__ == "__main__":
-    asyncio.run(startup())
+async def main():
+    async with bot:
+        print("🚀 Starting bot...")
+        await bot.start(TOKEN)
