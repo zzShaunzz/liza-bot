@@ -232,23 +232,24 @@ async def generate_dilemma():
     ]
     return await generate_ai_text(messages, temperature=0.7)
 
-async def stream_text(message: discord.Message, full_text: str, chunk_size: int = 6, delay: float = 0.5):
+async def stream_text(message: discord.Message, full_text: str, delay: float = 0.8):
     if not full_text:
         await message.edit(content="⚠️ Failed to generate text.")
         return
-    paragraphs = full_text.split("\n")
-    formatted_lines = [f"• {line.strip()}" for line in paragraphs if line.strip()]
-    formatted_text = "\n".join(formatted_lines)
-    chunks = formatted_text.split()
+
+    paragraphs = [line.strip() for line in full_text.split("\n") if line.strip()]
+    bullets = [f"• {para}" for para in paragraphs]
+
     output = ""
-    for i in range(0, len(chunks), chunk_size):
+    for bullet in bullets:
         if active_game and active_game.terminated:
             return
-        output += " ".join(chunks[i:i+chunk_size]) + " "
+        output += bullet + "\n"
         try:
             await message.edit(content=output.strip())
             await asyncio.sleep(delay)
-        except:
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to stream bullet: {e}")
             break
 
 async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
@@ -352,7 +353,7 @@ class ZombieGame(commands.Cog):
             await channel.send("🛑 Game terminated or scene generation failed.")
             return
 
-        await stream_text(loading_msg, f"🎭 **Scene**\n{intro_text}", chunk_size=6, delay=0.6)
+        await stream_text(loading_msg, f"🎭 **Scene**\n{intro_text}", delay=0.8)
         await asyncio.sleep(10)
 
         # Phase 2: Dilemma generation
