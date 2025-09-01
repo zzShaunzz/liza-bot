@@ -116,6 +116,7 @@ CHARACTER_INFO = {
         "likely_conflicts": ["Noah Nainggolan"]
     }
 }
+CHARACTERS = list(CHARACTER_INFO.keys())
 
 class GameState:
     def __init__(self, initiator):
