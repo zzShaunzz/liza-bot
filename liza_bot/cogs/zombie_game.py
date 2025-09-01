@@ -251,7 +251,7 @@ class ZombieGame(commands.Cog):
 
     @commands.command(name="lizazombie")
     async def lizazombie_prefix(self, ctx: commands.Context):
-        await self.start_game_flow(ctx.channel, ctx.author.id)
+        await ctx.send(f"🧟 Starting zombie game for <@{ctx.author.id}>...")
 
     async def run_round(self, channel):
         g = active_game
