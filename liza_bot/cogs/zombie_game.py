@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL = os.getenv("MODEL", "mistral/mixtral")
+MODEL = os.getenv("MODEL")
 
 if not OPENROUTER_API_KEY:
     logger.error("❌ OPENROUTER_API_KEY is missing.")
