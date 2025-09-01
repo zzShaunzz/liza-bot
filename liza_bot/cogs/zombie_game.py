@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL = os.getenv("MODEL")
+MODEL = os.getenv("MODEL", "meta-llama/llama-3-8b-instruct")
 
 if not OPENROUTER_API_KEY:
     logger.error("❌ OPENROUTER_API_KEY is missing.")
@@ -167,9 +167,10 @@ def build_intro_context():
     context += f"\nCharacter traits:\n{traits_summary}\n"
 
     context += (
-        "Write a vivid, paragraph-length scene describing what each character is doing at the start of this round. "
-        "Include emotional tension, physical actions, and hints of interpersonal dynamics. "
-        "Make it immersive and at least 100 words long. Do not describe any new threat or dilemma yet — just set the scene.\n"
+        "Write a vivid, immersive scene of at least 100 words. "
+        "Describe what each character is doing at the start of this round. "
+        "Include emotional tension, physical actions, and interpersonal dynamics. "
+        "Do not summarize. Do not skip details. Do not describe any new threat or dilemma yet — just set the scene.\n"
     )
 
     return context
@@ -197,6 +198,8 @@ async def generate_intro_scene():
         {"role": "user", "content": prompt}
     ]
 
+    logger.debug(f"🧟 Prompt sent to model:\n{prompt}")
+
     for attempt in range(3):
         try:
             response = requests.post(
@@ -214,10 +217,9 @@ async def generate_intro_scene():
 
             data = response.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-            logger.debug(f"[ZombieGame] 🧠 Raw intro response:\n{content}")
             logger.debug(f"🧟 Raw intro output (attempt {attempt + 1}):\n{content}")
 
-            if content and len(content.split()) >= 20:
+            if content and len(content.split()) >= 40:
                 logger.info("[ZombieGame] ✅ Intro scene generated.")
                 return content
 
@@ -237,6 +239,8 @@ async def generate_story():
         {"role": "user", "content": prompt}
     ]
 
+    logger.debug(f"🧟 Prompt sent to model:\n{prompt}")
+
     for attempt in range(3):
         try:
             response = requests.post(
@@ -254,10 +258,9 @@ async def generate_story():
 
             data = response.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-            logger.debug(f"[ZombieGame] 🧠 Raw dilemma response:\n{content}")
             logger.debug(f"🧟 Raw dilemma output (attempt {attempt + 1}):\n{content}")
 
-            if content and len(content.split()) >= 20:
+            if content and len(content.split()) >= 40:
                 logger.info("[ZombieGame] ✅ Dilemma generated.")
                 return content
 
@@ -458,7 +461,7 @@ class ZombieGame(commands.Cog):
     async def end_summary(self, channel: discord.TextChannel):
         g = active_game
         await channel.send("📜 **Game Summary**")
-        await channel.send("🪦 Deaths (most recent first):\n" + "\n.join([f'• {name}' for name in g.dead])")
+        await channel.send("🪦 Deaths (most recent first):\n" + "\n".join([f"• {name}" for name in g.dead]))
 
         await channel.send("📊 **Final Stats**")
         await channel.send(f"🏅 Most helpful: {get_top_stat(g.stats['helpful'])}")
