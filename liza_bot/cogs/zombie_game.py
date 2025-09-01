@@ -107,6 +107,73 @@ CHARACTER_INFO = {
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
 
+class GameState:
+    def __init__(self, initiator: int):
+        self.initiator = initiator
+        self.round = 0
+        self.alive = CHARACTERS.copy()
+        self.dead = []
+        self.last_choice = None
+        self.last_events = ""
+        self.options = []
+        self.votes = {}
+        self.stats = {
+            "helpful": {name: 0 for name in CHARACTERS},
+            "sinister": {name: 0 for name in CHARACTERS},
+            "resourceful": {name: 0 for name in CHARACTERS},
+            "bonds": {},
+            "conflicts": {},
+            "dignified": {name: 100 for name in CHARACTERS}
+        }
+
+active_game = None
+
+def start_game(user_id: int):
+    global active_game
+    active_game = GameState(user_id)
+
+    for i in range(len(CHARACTERS)):
+        for j in range(i + 1, len(CHARACTERS)):
+            pair = tuple(sorted((CHARACTERS[i], CHARACTERS[j])))
+            active_game.stats["bonds"][pair] = 1
+
+    for name, info in CHARACTER_INFO.items():
+        for partner in info.get("likely_pairs", []):
+            pair = tuple(sorted((name, partner)))
+            active_game.stats["bonds"][pair] = active_game.stats["bonds"].get(pair, 1) + 2
+        for rival in info.get("likely_conflicts", []):
+            pair = tuple(sorted((name, rival)))
+            active_game.stats["conflicts"][pair] = active_game.stats["conflicts"].get(pair, 0) + 2
+
+def end_game():
+    global active_game
+    active_game = None
+
+def is_active():
+    return active_game is not None
+
+def build_intro_context():
+    g = active_game
+    context = f"Round {g.round}\n"
+
+    if g.round > 1:
+        context += f"Last round recap: {g.last_events}\n"
+
+    context += f"Alive characters: {', '.join(g.alive)}\n"
+
+    traits_summary = "\n".join(
+        [f"{name}: {', '.join(CHARACTER_INFO[name]['traits'])}" for name in g.alive]
+    )
+    context += f"\nCharacter traits:\n{traits_summary}\n"
+
+    context += (
+        "Write a vivid scene describing what each character is doing at the start of this round. "
+        "Include emotional tension, physical actions, and hints of interpersonal dynamics. "
+        "Do not describe any new threat or dilemma yet — just set the scene.\n"
+    )
+
+    return context
+
 def build_dilemma_context():
     g = active_game
     context = f"Round {g.round} dilemma:\n"
