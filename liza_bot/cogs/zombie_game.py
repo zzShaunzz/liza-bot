@@ -31,8 +31,8 @@ def bold_character_names(text: str) -> str:
     return text
 
 def enforce_bullets(text: str) -> str:
-    matches = re.findall(r"•\s*(.+?)(?=(?:•|$))", text, re.DOTALL)
-    cleaned = [f"• {line.strip().strip('*')}" for line in matches if line.strip()]
+    matches = re.findall(r"•\s*(.+?)(?=\s*•|$)", text, re.DOTALL)
+    cleaned = [f"• {line.strip()}" for line in matches if line.strip()]
     return "\n".join(cleaned)
 
 CHARACTER_INFO = {
