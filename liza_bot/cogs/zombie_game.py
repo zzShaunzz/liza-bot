@@ -174,10 +174,11 @@ def build_intro_context():
 
     return context
 
-async def generate_intro_scene():
+async def generate_intro_scene(retry=False):
+    prompt = build_intro_context()
     messages = [
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
-        {"role": "user", "content": build_intro_context()}
+        {"role": "user", "content": prompt}
     ]
 
     try:
@@ -194,12 +195,16 @@ async def generate_intro_scene():
             }
         )
 
-        logger.debug(f"[ZombieGame] 🧠 Intro prompt:\n{build_intro_context()}")
+        logger.debug(f"[ZombieGame] 🧠 Intro prompt:\n{prompt}")
+        logger.debug(f"[ZombieGame] 🧠 Raw response:\n{response.text}")
         data = response.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
         if not content:
-            logger.warning("⚠️ Fallback triggered. Intro scene was empty.")
+            if not retry:
+                logger.warning("⚠️ Intro scene empty — retrying once...")
+                return await generate_intro_scene(retry=True)
+            logger.warning("⚠️ Fallback triggered. Intro scene was empty after retry.")
             return "The survivors gather in silence, each lost in thought as the night deepens."
 
         logger.info("[ZombieGame] ✅ Intro scene generated.")
@@ -231,10 +236,11 @@ def build_dilemma_context():
 
     return context
 
-async def generate_story():
+async def generate_story(retry=False):
+    prompt = build_dilemma_context()
     messages = [
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
-        {"role": "user", "content": build_dilemma_context()}
+        {"role": "user", "content": prompt}
     ]
 
     try:
@@ -251,12 +257,16 @@ async def generate_story():
             }
         )
 
-        logger.debug(f"[ZombieGame] 🧠 Dilemma prompt:\n{build_dilemma_context()}")
+        logger.debug(f"[ZombieGame] 🧠 Dilemma prompt:\n{prompt}")
+        logger.debug(f"[ZombieGame] 🧠 Raw response:\n{response.text}")
         data = response.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
         if not content:
-            logger.warning("⚠️ Fallback triggered. Dilemma was empty.")
+            if not retry:
+                logger.warning("⚠️ Dilemma empty — retrying once...")
+                return await generate_story(retry=True)
+            logger.warning("⚠️ Fallback triggered. Dilemma was empty after retry.")
             return "The group faces a mysterious threat, but the details are unclear."
 
         logger.info("[ZombieGame] ✅ Dilemma generated.")
