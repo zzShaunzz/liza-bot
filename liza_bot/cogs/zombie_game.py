@@ -25,17 +25,15 @@ def bold_character_names(text: str) -> str:
         for part in full_name.split():
             name_parts.add(part)
     sorted_names = sorted(name_parts, key=len, reverse=True)
-
     for name in sorted_names:
         pattern = re.compile(rf"(?<!\*)\b{re.escape(name)}\b(?!\*)", re.IGNORECASE)
         text = pattern.sub(bold_name(name), text)
     return text
 
 def enforce_bullets(text: str) -> str:
-    # Split on bullets or newlines, then reformat cleanly
-    lines = re.split(r"•\s*|\n+", text)
-    cleaned = [line.strip(" *") for line in lines if line.strip()]
-    return "\n".join([f"• {line}" for line in cleaned])
+    matches = re.findall(r"•\s*(.+?)(?=(?:•|$))", text, re.DOTALL)
+    cleaned = [f"• {line.strip().strip('*')}" for line in matches if line.strip()]
+    return "\n".join(cleaned)
 
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
@@ -71,14 +69,14 @@ CHARACTER_INFO = {
         "traits": ["conniving", "lucky", "swimmer"],
         "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
-        "likely_conflicts": ["Noah Nainggolan"]
+        "likely_conflicts": ["Aiden Muy"]
     },
     "Kate Nainggolan": {
         "age": 14, "gender": "Female",
         "traits": ["manipulative", "quick-witted", "enduring", "persuasive"],
         "siblings": ["Jill Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
-        "likely_conflicts": ["Aiden Muy"]
+        "likely_conflicts": ["Nico Muy"]
     },
     "Vivian Muy": {
         "age": 18, "gender": "Female",
@@ -92,28 +90,28 @@ CHARACTER_INFO = {
         "traits": ["strong", "peacekeeper", "withdraws under pressure", "hand-to-hand expert"],
         "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
-        "likely_conflicts": ["Addison Sadsarin"]
+        "likely_conflicts": ["Shaun Sadsarin"]
     },
     "Aiden Muy": {
         "age": 14, "gender": "Male",
         "traits": ["agile", "crafty", "chef", "mental reader"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
-        "likely_conflicts": ["Ella Muy"]
+        "likely_conflicts": ["Addison Sadsarin"]
     },
     "Ella Muy": {
         "age": 11, "gender": "Female",
         "traits": ["physically reliant", "luckiest"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"],
         "likely_pairs": ["Addison Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
-        "likely_conflicts": ["Shaun Sadsarin"]
+        "likely_conflicts": ["Nico Muy"]
     },
     "Nico Muy": {
         "age": 12, "gender": "Male",
         "traits": ["daring", "comical", "risk-taker", "needs guidance"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"],
         "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
-        "likely_conflicts": ["Vivian Muy"]
+        "likely_conflicts": ["Ella Muy"]
     },
     "Jordan": {
         "age": 13, "gender": "Male",
@@ -213,7 +211,7 @@ def build_scene_prompt():
         f"🧠 Setting: {g.story_seed}\n"
         f"🧍 Alive characters: {', '.join([bold_name(name) for name in g.alive])}\n"
         f"🧠 Traits:\n{traits}\n\n"
-        "🎬 Write a vivid zombie survival scene. Include every character. Format each character’s action as a bullet point on its own line. Use paragraph breaks between groups. Keep each line concise."
+        "🎬 Write a vivid zombie survival scene. Include every character. Format each character’s action as a bullet point. Keep each bullet short and place each on its own line."
     )
 
 def build_scene_summary_prompt(scene_text):
@@ -395,12 +393,12 @@ class ZombieGame(commands.Cog):
         relationship_lines = []
         for line in raw_health.split("\n"):
             if line.strip().startswith("•"):
-                health_lines.append(bold_character_names(line.strip()))
+                health_lines.append(line.strip())
             elif line.strip():
-                relationship_lines.append(f"• {bold_character_names(line.strip())}")
+                relationship_lines.append(line.strip())
 
-        health_block = enforce_bullets("\n".join(health_lines))
-        relationship_block = enforce_bullets("\n".join(relationship_lines))
+        health_block = enforce_bullets(bold_character_names("\n".join(health_lines)))
+        relationship_block = enforce_bullets(bold_character_names("\n".join(relationship_lines)))
         full_health = f"━━━━━━━━━━━━━━\n🩺 **Health Status**\n\n{health_block}\n\n💬 **Group Dynamics**\n\n{relationship_block}"
         await chunk_and_stream(channel, full_health, delay=0.03)
         await asyncio.sleep(2)
@@ -426,9 +424,9 @@ class ZombieGame(commands.Cog):
             end_game()
             return
 
-        choices_text = enforce_bullets("━━━━━━━━━━━━━━\n🔀 **Choices**\n\n" + "\n".join(g.options))
-        choices_msg = await channel.send("...")
-        await stream_text_wordwise(choices_msg, choices_text, delay=0.03)
+        choices_text = enforce_bullets(bold_character_names("\n".join(g.options)))
+        await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n🔀 **Choices**\n\n{choices_text}", delay=0.03)
+        choices_msg = await channel.send("🗳️ React to vote!")
         await choices_msg.add_reaction("1️⃣")
         await choices_msg.add_reaction("2️⃣")
         await asyncio.sleep(10)
