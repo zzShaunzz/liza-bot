@@ -283,9 +283,10 @@ async def load_cogs(bot: commands.Bot):
     for cog in cogs_to_load:
         try:
             await bot.load_extension(cog)
-            print(f"✅ Loaded {cog}")
-        except Exception:
-            print(f"❌ Failed to load {cog}:\n{traceback.format_exc()}")
+            logging.info(f"✅ Loaded {cog}")
+        except Exception as e:
+            logging.error(f"❌ Failed to load {cog}: {e}")
+            logging.debug(traceback.format_exc())
 
 # 🚀 Startup Sequence
 class MyBot(commands.Bot):
