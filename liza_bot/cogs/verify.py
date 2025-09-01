@@ -9,6 +9,7 @@ RULES_MESSAGE_ID = int(os.environ.get("RULES_MESSAGE_ID", 0))
 RULES_CHANNEL_ID = int(os.environ.get("RULES_CHANNEL_ID", 0))
 VERIFIED_ROLE_ID = int(os.environ.get("VERIFIED_ROLE_ID", 0))
 OWNER_ID = int(os.environ.get("OWNER_ID", 0))  # Optional: restrict !auditverify to owner
+BUILD_TAG = os.environ.get("BUILD_TAG", "dev")  # For !version command
 
 class VerifyCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -77,6 +78,10 @@ class VerifyCog(commands.Cog):
         await self.audit_verified_roles()
         await ctx.send("✅ Audit complete. Check console for details.")
 
+    @commands.command(name="version")
+    async def version_command(self, ctx: commands.Context):
+        await ctx.send(f"🛠️ Bot version: `{BUILD_TAG}`")
+
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         if (
@@ -142,5 +147,6 @@ async def setup(bot: commands.Bot):
     try:
         asyncio.create_task(cog.backfill_verified_users())
         logging.info("[VerifyCog] 🔄 Scheduled backfill_verified_users task.")
+        logging.info(f"[VerifyCog] 🛠️ Running bot version: {BUILD_TAG}")
     except Exception as e:
         logging.exception("[VerifyCog] ❌ Failed to schedule backfill task.")
