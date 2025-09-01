@@ -32,8 +32,12 @@ def bold_character_names(text: str) -> str:
 
 def enforce_bullets(text: str) -> str:
     matches = re.findall(r"•\s*(.+?)(?=\s*•|$)", text, re.DOTALL)
-    cleaned = [f"• {line.strip()}" for line in matches if line.strip()]
-    return "\n".join(cleaned)
+    if matches:
+        return "\n".join([f"• {line.strip()}" for line in matches if line.strip()])
+    
+    # Fallback: split into sentences if no bullets found
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    return "\n".join([f"• {s.strip()}" for s in sentences if s.strip()])
 
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
@@ -291,11 +295,11 @@ async def chunk_and_stream(channel: discord.TextChannel, full_text: str, delay: 
     current = ""
     for line in full_text.split("\n"):
         if len(current) + len(line) + 1 > 1900:
-            chunks.append(current.strip())
+            chunks.append(current.rstrip())
             current = ""
         current += line + "\n"
     if current:
-        chunks.append(current.strip())
+        chunks.append(current.rstrip())
 
     for chunk in chunks:
         msg = await channel.send("...")
