@@ -362,7 +362,7 @@ class VerifyCog(commands.Cog):
         self.bot = bot
 
 async def setup(bot):
-    await bot.add_cog(VerifyCog(bot))
-    bot.loop.create_task(cog.backfill_verified_users())
+    cog = ZombieGame(bot)
+    await bot.add_cog(cog)
     print("✅ ZombieGame cog loaded")
     
