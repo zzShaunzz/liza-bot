@@ -307,3 +307,8 @@ async def main():
     async with bot:
         print("🚀 Starting bot...")
         await bot.start(TOKEN)
+
+# 🔨 Run the bot
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(main())
