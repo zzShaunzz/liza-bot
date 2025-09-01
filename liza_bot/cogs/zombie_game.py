@@ -21,96 +21,84 @@ def bold_name(name: str) -> str:
 
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
-        "age": 15,
-        "gender": "Male",
+        "age": 15, "gender": "Male",
         "traits": ["organizer", "strong", "fast", "heat-sensitive", "pattern-adapter"],
         "siblings": ["Addison Sadsarin"],
         "likely_pairs": ["Addison Sadsarin", "Aiden Muy", "Gabe Muy", "Dylan Pastorin"],
         "likely_conflicts": ["Jordan"]
     },
     "Addison Sadsarin": {
-        "age": 16,
-        "gender": "Female",
+        "age": 16, "gender": "Female",
         "traits": ["kind", "patient", "versatile", "physically weak", "slow decision-maker"],
         "siblings": ["Shaun Sadsarin"],
         "likely_pairs": ["Shaun Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
         "likely_conflicts": ["Dylan Pastorin"]
     },
     "Dylan Pastorin": {
-        "age": 21,
-        "gender": "Male",
+        "age": 21, "gender": "Male",
         "traits": ["mentally brave", "protective", "strong with tools", "slow mover", "manipulation-prone", "extroverted"],
         "siblings": [],
         "likely_pairs": ["Noah Nainggolan", "Gabe Muy", "Shaun Sadsarin", "Vivian Muy"],
         "likely_conflicts": ["Kate Nainggolan"]
     },
     "Noah Nainggolan": {
-        "age": 18,
-        "gender": "Male",
+        "age": 18, "gender": "Male",
         "traits": ["physically capable", "fighter", "not a planner"],
         "siblings": ["Kate Nainggolan", "Jill Nainggolan"],
         "likely_pairs": ["Gabe Muy", "Jill Nainggolan", "Kate Nainggolan", "Dylan Pastorin"],
-        "likely_conflicts": ["Jill Nainggolan"]
+        "likely_conflicts": ["Nico Muy"]
     },
     "Jill Nainggolan": {
-        "age": 16,
-        "gender": "Female",
+        "age": 16, "gender": "Female",
         "traits": ["conniving", "lucky", "swimmer"],
         "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
         "likely_conflicts": ["Noah Nainggolan"]
     },
     "Kate Nainggolan": {
-        "age": 14,
-        "gender": "Female",
+        "age": 14, "gender": "Female",
         "traits": ["manipulative", "quick-witted", "enduring", "persuasive"],
         "siblings": ["Jill Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
         "likely_conflicts": ["Aiden Muy"]
     },
     "Vivian Muy": {
-        "age": 18,
-        "gender": "Female",
+        "age": 18, "gender": "Female",
         "traits": ["wise", "calm", "insightful", "secret genius"],
         "siblings": ["Gabe Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Dylan Pastorin", "Ella Muy", "Aiden Muy", "Addison Sadsarin"],
         "likely_conflicts": ["Gabe Muy"]
     },
     "Gabe Muy": {
-        "age": 17,
-        "gender": "Male",
+        "age": 17, "gender": "Male",
         "traits": ["strong", "peacekeeper", "withdraws under pressure", "hand-to-hand expert"],
         "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
         "likely_conflicts": ["Addison Sadsarin"]
     },
     "Aiden Muy": {
-        "age": 14,
-        "gender": "Male",
+        "age": 14, "gender": "Male",
         "traits": ["agile", "crafty", "chef", "mental reader"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
-        "likely_conflicts": ["Ella Muy"]
+        "likely_conflicts": ["Aiden Muy"]
     },
     "Ella Muy": {
-        "age": 11,
-        "gender": "Female",
+        "age": 11, "gender": "Female",
         "traits": ["physically reliant", "luckiest"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"],
         "likely_pairs": ["Addison Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
         "likely_conflicts": ["Shaun Sadsarin"]
     },
     "Nico Muy": {
-        "age": 12,
-        "gender": "Male",
+        "age": 12, "gender": "Male",
         "traits": ["daring", "comical", "risk-taker", "needs guidance"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"],
         "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
         "likely_conflicts": ["Ella Muy"]
     },
     "Jordan": {
-        "age": 13,
-        "gender": "Male",
+        "age": 13, "gender": "Male",
         "traits": ["gentle", "quietly skilled", "stronger than he seems"],
         "siblings": [],
         "likely_pairs": ["Nico Muy", "Gabe Muy", "Aiden Muy", "Dylan Pastorin"],
@@ -286,7 +274,7 @@ async def generate_choices():
     ]
     return await generate_ai_text(messages, temperature=0.8)
 
-async def stream_text_wordwise(message: discord.Message, full_text: str, delay: float = 0.05):
+async def stream_text_wordwise(message: discord.Message, full_text: str, delay: float = 0.06):
     if not full_text:
         await message.edit(content="⚠️ Failed to generate text.")
         return
@@ -308,7 +296,7 @@ async def stream_text_wordwise(message: discord.Message, full_text: str, delay: 
     if output:
         await message.edit(content=output.strip())
 
-async def chunk_and_send(channel: discord.TextChannel, full_text: str):
+async def chunk_and_stream(channel: discord.TextChannel, full_text: str, delay: float = 0.06):
     chunks = []
     current = ""
     for line in full_text.split("\n"):
@@ -320,8 +308,49 @@ async def chunk_and_send(channel: discord.TextChannel, full_text: str):
         chunks.append(current.strip())
 
     for chunk in chunks:
-        await channel.send(chunk)
-        await asyncio.sleep(1)
+        msg = await channel.send("...")
+        await stream_text_wordwise(msg, chunk, delay=delay)
+
+async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
+    for i in range(seconds, 0, -1):
+        if active_game and active_game.terminated:
+            return
+        try:
+            await message.edit(content=f"{prefix} {i}")
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.warning(f"Countdown failed: {e}")
+            break
+
+async def tally_votes(message: discord.Message):
+    votes = {"1️⃣": 0, "2️⃣": 0}
+    for reaction in message.reactions:
+        if reaction.emoji in votes:
+            votes[reaction.emoji] = reaction.count - 1
+    return votes
+
+def get_top_stat(stat_dict: dict):
+    if not stat_dict:
+        return "None"
+    top = max(stat_dict.items(), key=lambda x: x[1])
+    return f"{bold_name(top[0])} ({top[1]} points)"
+
+def update_stats(g: GameState):
+    for name in random.sample(g.alive, k=random.randint(2, 5)):
+        g.stats["helpful"][name] += random.randint(1, 3)
+    for name in random.sample(g.alive, k=random.randint(1, 3)):
+        g.stats["sinister"][name] += random.randint(1, 2)
+    for name in random.sample(g.alive, k=random.randint(2, 4)):
+        g.stats["resourceful"][name] += random.randint(1, 3)
+    pairs = random.sample(g.alive, k=min(4, len(g.alive)))
+    for i in range(0, len(pairs)-1, 2):
+        pair = tuple(sorted((pairs[i], pairs[i+1])))
+        g.stats["bonds"][pair] += random.randint(1, 3)
+    if len(g.alive) > 3:
+        conflict_pair = tuple(sorted(random.sample(g.alive, 2)))
+        g.stats["conflicts"][conflict_pair] += random.randint(1, 2)
+    for name in g.alive:
+        g.stats["dignified"][name] -= random.randint(0, 2)
 
 class ZombieGame(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -379,36 +408,36 @@ class ZombieGame(commands.Cog):
             return
 
         # Phase 1: Scene generation
-        loading_msg = await channel.send("🧠 Generating scene...")
         scene_text = await generate_scene()
         if g.terminated or not scene_text:
             await channel.send("🛑 Game terminated or scene generation failed.")
             return
-        await stream_text_wordwise(loading_msg, f"🎭 **Scene**\n{scene_text}", delay=0.08)
-        await asyncio.sleep(5)
+        scene_msg = await channel.send("...")
+        await stream_text_wordwise(scene_msg, f"🎭 **Scene**\n{scene_text}", delay=0.06)
+        await asyncio.sleep(2)
 
         # Phase 2: Scene summary
         summary_text = await generate_scene_summary(scene_text)
         if summary_text:
-            await channel.send(f"📝 **Scene Summary**\n{summary_text}")
-        await asyncio.sleep(3)
+            summary_msg = await channel.send("...")
+            await stream_text_wordwise(summary_msg, f"📝 **Scene Summary**\n{summary_text}", delay=0.06)
+        await asyncio.sleep(2)
 
         # Phase 3: Health report
-        health_msg = await channel.send("🩺 Assessing group health and relationships...")
         health_text = await generate_health_report()
         if g.terminated or not health_text:
             await channel.send("🛑 Game terminated or health report failed.")
             return
-        await chunk_and_send(channel, f"🩺 **Health & Relationships**\n{health_text}")
-        await asyncio.sleep(5)
+        await chunk_and_stream(channel, f"🩺 **Health & Relationships**\n{health_text}", delay=0.06)
+        await asyncio.sleep(2)
 
         # Phase 4: Dilemma generation
-        dilemma_msg = await channel.send("🧠 Generating dilemma...")
         dilemma_text = await generate_dilemma()
         if g.terminated or not dilemma_text:
             await channel.send("🛑 Game terminated or dilemma generation failed.")
             return
-        await dilemma_msg.edit(content=f"🧠 **Dilemma**\n{dilemma_text}")
+        dilemma_msg = await channel.send("...")
+        await stream_text_wordwise(dilemma_msg, f"🧠 **Dilemma**\n{dilemma_text}", delay=0.06)
         await asyncio.sleep(2)
 
         # Phase 5: Choice generation
@@ -423,7 +452,8 @@ class ZombieGame(commands.Cog):
             end_game()
             return
 
-        choices_msg = await channel.send("🔀 **Choices**\n" + "\n".join(g.options))
+        choices_msg = await channel.send("...")
+        await stream_text_wordwise(choices_msg, "🔀 **Choices**\n" + "\n".join(g.options), delay=0.06)
         await choices_msg.add_reaction("1️⃣")
         await choices_msg.add_reaction("2️⃣")
         await asyncio.sleep(10)
@@ -475,7 +505,7 @@ class ZombieGame(commands.Cog):
             f"💀 **Deaths This Round**\n{death_lines}\n\n"
             f"🧍 **Remaining Survivors**\n{survivor_lines}"
         )
-        await chunk_and_send(channel, g.last_events)
+        await chunk_and_stream(channel, g.last_events, delay=0.06)
         update_stats(g)
         await asyncio.sleep(10)
 
@@ -510,7 +540,6 @@ class ZombieGame(commands.Cog):
 
         await channel.send(f"🕊️ Most dignified: {get_top_stat(g.stats['dignified'])}")
 
-        # Final recap generation
         recap_prompt = (
             f"🧠 Final recap request:\n"
             f"Characters who died: {', '.join([bold_name(name) for name in g.dead])}\n"
@@ -526,7 +555,7 @@ class ZombieGame(commands.Cog):
         ]
         recap_text = await generate_ai_text(messages, temperature=0.8)
         if recap_text:
-            await chunk_and_send(channel, "🎞️ **Final Recap**\n" + recap_text)
+            await chunk_and_stream(channel, "🎞️ **Final Recap**\n" + recap_text, delay=0.06)
         else:
             await channel.send("⚠️ Final recap generation failed.")
 
