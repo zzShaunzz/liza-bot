@@ -167,11 +167,10 @@ def build_intro_context():
     context += f"\nCharacter traits:\n{traits_summary}\n"
 
     context += (
-        "Write a vivid, immersive scene of at least 100 words. "
-        "Describe what each character is doing at the start of this round. "
-        "Include emotional tension, physical actions, and interpersonal dynamics. "
-        "Do not summarize. Do not skip details. Do not describe any new threat or dilemma yet — just set the scene.\n"
-    )
+    "Write a vivid zombie survival scene of at least 100 words. "
+    "Focus on what each character is doing. Include emotional tension and physical actions. "
+    "Do not describe any threat or dilemma yet."
+)
 
     return context
 
@@ -220,7 +219,7 @@ async def generate_intro_scene():
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             logger.debug(f"🧟 Raw intro output (attempt {attempt + 1}):\n{content}")
 
-            if content:
+            return content
                 logger.info("[ZombieGame] ✅ Intro scene generated.")
                 return content
 
@@ -262,7 +261,7 @@ async def generate_story():
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             logger.debug(f"🧟 Raw dilemma output (attempt {attempt + 1}):\n{content}")
 
-            if content:
+            return content
                 logger.info("[ZombieGame] ✅ Dilemma generated.")
                 return content
 
