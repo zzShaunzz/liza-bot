@@ -142,7 +142,7 @@ def start_game(user_id: int):
 
     for i in range(len(CHARACTERS)):
         for j in range(i + 1, len(CHARACTERS)):
-            pair = tuple(sorted((CHARACTERS[i], CHARACTER_INFO[j])))
+            pair = tuple(sorted((CHARACTERS[i], CHARACTERS[j])))
             active_game.stats["bonds"][pair] = 1
 
     for name, info in CHARACTER_INFO.items():
