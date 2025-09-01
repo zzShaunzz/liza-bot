@@ -306,4 +306,6 @@ async def main():
         print("🚀 Starting bot...")
         await bot.start(TOKEN)
 
-
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
