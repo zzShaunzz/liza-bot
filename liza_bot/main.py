@@ -259,8 +259,8 @@ async def on_guild_channel_pins_update(channel, _):
 
 import traceback  # make sure this is at the top of your file
 
-@bot.event
-async def on_ready():
+# 🔧 Cog Loader
+async def load_cogs():
     cogs_to_load = [
         "cogs.birthday",
         "cogs.liza_ai",
@@ -279,6 +279,11 @@ async def on_ready():
         except Exception:
             logger.error(f"❌ Failed to load {cog}:\n{traceback.format_exc()}")
 
+# 🚀 Startup Sequence
+async def startup():
+    keep_alive()  # Start Flask server in background
+    await load_cogs()
+
     try:
         synced = await bot.tree.sync()
         logger.info(f"🌐 Synced {len(synced)} slash commands.")
@@ -286,7 +291,8 @@ async def on_ready():
         logger.warning(f"⚠️ Failed to sync slash commands: {e}")
 
     logger.info(f"👋 Logged in as {bot.user.name}")
+    await bot.start(TOKEN)
 
-# 🚀 Launch
-keep_alive()
-bot.run(TOKEN)
+# 🏁 Launch Bot
+if __name__ == "__main__":
+    asyncio.run(startup())
