@@ -290,12 +290,9 @@ async def load_cogs(bot: commands.Bot):
 # 🚀 Startup Sequence
 class MyBot(commands.Bot):
     async def setup_hook(self):
-        keep_alive()  # Start Flask server in background
+        keep_alive()  # Optional Flask server
+        await load_cogs(self)  # Pass self explicitly
 
-        # Load cogs
-        await load_cogs()
-
-        # Sync slash commands safely
         try:
             synced = await self.tree.sync()
             print(f"🌐 Synced {len(synced)} slash commands.")
