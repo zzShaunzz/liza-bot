@@ -19,6 +19,11 @@ MODEL = os.getenv("MODEL")
 def bold_name(name: str) -> str:
     return f"**{name}**"
 
+def bold_character_names(text: str) -> str:
+    for name in CHARACTER_INFO.keys():
+        text = text.replace(name, bold_name(name))
+    return text
+
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
         "age": 15, "gender": "Male",
@@ -274,7 +279,7 @@ async def generate_choices():
     ]
     return await generate_ai_text(messages, temperature=0.8)
 
-async def stream_text_wordwise(message: discord.Message, full_text: str, delay: float = 0.06):
+async def stream_text_wordwise(message: discord.Message, full_text: str, delay: float = 0.025):
     if not full_text:
         await message.edit(content="⚠️ Failed to generate text.")
         return
@@ -296,7 +301,7 @@ async def stream_text_wordwise(message: discord.Message, full_text: str, delay: 
     if output:
         await message.edit(content=output.strip())
 
-async def chunk_and_stream(channel: discord.TextChannel, full_text: str, delay: float = 0.06):
+async def chunk_and_stream(channel: discord.TextChannel, full_text: str, delay: float = 0.025):
     chunks = []
     current = ""
     for line in full_text.split("\n"):
@@ -413,14 +418,14 @@ class ZombieGame(commands.Cog):
             await channel.send("🛑 Game terminated or scene generation failed.")
             return
         scene_msg = await channel.send("...")
-        await stream_text_wordwise(scene_msg, f"🎭 **Scene**\n{scene_text}", delay=0.06)
+        await stream_text_wordwise(scene_msg, f"🎭 **Scene**\n{scene_text}", delay=0.025)
         await asyncio.sleep(2)
 
         # Phase 2: Scene summary
         summary_text = await generate_scene_summary(scene_text)
         if summary_text:
             summary_msg = await channel.send("...")
-            await stream_text_wordwise(summary_msg, f"📝 **Scene Summary**\n{summary_text}", delay=0.06)
+            await stream_text_wordwise(summary_msg, f"📝 **Scene Summary**\n{summary_text}", delay=0.025)
         await asyncio.sleep(2)
 
         # Phase 3: Health report
@@ -428,7 +433,7 @@ class ZombieGame(commands.Cog):
         if g.terminated or not health_text:
             await channel.send("🛑 Game terminated or health report failed.")
             return
-        await chunk_and_stream(channel, f"🩺 **Health & Relationships**\n{health_text}", delay=0.06)
+        await chunk_and_stream(channel, f"🩺 **Health & Relationships**\n{health_text}", delay=0.025)
         await asyncio.sleep(2)
 
         # Phase 4: Dilemma generation
@@ -437,7 +442,7 @@ class ZombieGame(commands.Cog):
             await channel.send("🛑 Game terminated or dilemma generation failed.")
             return
         dilemma_msg = await channel.send("...")
-        await stream_text_wordwise(dilemma_msg, f"🧠 **Dilemma**\n{dilemma_text}", delay=0.06)
+        await stream_text_wordwise(dilemma_msg, f"🧠 **Dilemma**\n{dilemma_text}", delay=0.025)
         await asyncio.sleep(2)
 
         # Phase 5: Choice generation
@@ -453,7 +458,7 @@ class ZombieGame(commands.Cog):
             return
 
         choices_msg = await channel.send("...")
-        await stream_text_wordwise(choices_msg, "🔀 **Choices**\n" + "\n".join(g.options), delay=0.06)
+        await stream_text_wordwise(choices_msg, "🔀 **Choices**\n" + "\n".join(g.options), delay=0.025)
         await choices_msg.add_reaction("1️⃣")
         await choices_msg.add_reaction("2️⃣")
         await asyncio.sleep(10)
@@ -505,7 +510,7 @@ class ZombieGame(commands.Cog):
             f"💀 **Deaths This Round**\n{death_lines}\n\n"
             f"🧍 **Remaining Survivors**\n{survivor_lines}"
         )
-        await chunk_and_stream(channel, g.last_events, delay=0.06)
+        await chunk_and_stream(channel, g.last_events, delay=0.025)
         update_stats(g)
         await asyncio.sleep(10)
 
@@ -555,7 +560,7 @@ class ZombieGame(commands.Cog):
         ]
         recap_text = await generate_ai_text(messages, temperature=0.8)
         if recap_text:
-            await chunk_and_stream(channel, "🎞️ **Final Recap**\n" + recap_text, delay=0.06)
+            await chunk_and_stream(channel, "🎞️ **Final Recap**\n" + recap_text, delay=0.025)
         else:
             await channel.send("⚠️ Final recap generation failed.")
 
