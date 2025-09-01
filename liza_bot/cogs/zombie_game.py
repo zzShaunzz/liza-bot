@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import os, random, asyncio, logging, aiohttp
+import os, random, asyncio, logging, aiohttp, re
 from dotenv import load_dotenv
 from collections import defaultdict
 
@@ -20,9 +20,15 @@ def bold_name(name: str) -> str:
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
-    for name in CHARACTER_INFO.keys():
-        text = text.replace(f"**{name}**", name)  # Remove double-bold if present
-        text = text.replace(name, bold_name(name))
+    name_parts = set()
+    for full_name in CHARACTER_INFO.keys():
+        name_parts.add(full_name)
+        for part in full_name.split():
+            name_parts.add(part)
+    sorted_names = sorted(name_parts, key=len, reverse=True)
+    for name in sorted_names:
+        pattern = re.compile(rf"\b{re.escape(name)}\b", re.IGNORECASE)
+        text = pattern.sub(bold_name(name), text)
     return text
 
 def enforce_bullets(text: str) -> str:
@@ -30,9 +36,11 @@ def enforce_bullets(text: str) -> str:
     formatted = []
     for line in lines:
         stripped = line.strip()
-        if stripped and not stripped.startswith("•"):
+        if not stripped:
+            continue
+        if not stripped.startswith("•"):
             formatted.append(f"• {stripped}")
-        elif stripped:
+        else:
             formatted.append(stripped)
     return "\n".join(formatted)
 
@@ -70,7 +78,7 @@ CHARACTER_INFO = {
         "traits": ["conniving", "lucky", "swimmer"],
         "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
-        "likely_conflicts": ["Noah Nainggolan"]
+        "likely_conflicts": ["Aiden Muy"]
     },
     "Kate Nainggolan": {
         "age": 14, "gender": "Female",
@@ -112,7 +120,7 @@ CHARACTER_INFO = {
         "traits": ["daring", "comical", "risk-taker", "needs guidance"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"],
         "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
-        "likely_conflicts": ["Vivian Muy"]
+        "likely_conflicts": ["Ella Muy"]
     },
     "Jordan": {
         "age": 13, "gender": "Male",
@@ -222,14 +230,14 @@ def build_health_prompt():
     g = active_game
     return (
         f"🧍 Alive characters: {', '.join([name for name in g.alive])}\n\n"
-        "🧠 For each character, describe their physical condition in 2–3 words (e.g., 'lightly injured', 'exhausted'). Format each as a bullet point. Then summarize the group’s emotional state and any rising bonds or conflicts in 1–2 sentences."
+        "🧠 For each character, describe their physical condition in 2–3 words (e.g., 'lightly injured', 'exhausted'). Format each as a bullet point. Then summarize the group’s emotional state and any rising bonds or conflicts in bullet format."
     )
 
 def build_dilemma_prompt():
-    return "🧠 Based on the scene and health report above, describe the new problem that arises. Limit the dilemma to 2 sentences. Do not include any choices yet."
+    return "🧠 Based on the scene and health report above, describe the new problem that arises. Limit the dilemma to 2 sentences. Format each sentence as a bullet point."
 
 def build_choices_prompt():
-    return "🧠 Based on the dilemma above, generate two distinct choices the group must vote on. Format each as a numbered option. Keep them short and dramatic."
+    return "🧠 Based on the dilemma above, generate two distinct choices the group must vote on. Format each as a numbered bullet point. Keep them short and dramatic."
 
 async def generate_scene():
     messages = [
@@ -374,14 +382,14 @@ class ZombieGame(commands.Cog):
             await channel.send("🛑 Game terminated or scene generation failed.")
             return
         scene_text = enforce_bullets(bold_character_names(raw_scene))
-        await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n🎭 **Scene**\n{scene_text}", delay=0.03)
+        await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n🎭 **Scene**\n\n{scene_text}", delay=0.03)
         await asyncio.sleep(2)
 
         # Phase 2: Scene summary
         raw_summary = await generate_scene_summary(scene_text)
         if raw_summary:
-            summary_text = bold_character_names(raw_summary.strip().split(".")[0] + ".")
-            await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n📝 **Scene Summary**\n{summary_text}", delay=0.03)
+            summary_text = enforce_bullets(bold_character_names(raw_summary.strip().split(".")[0] + "."))
+            await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n📝 **Scene Summary**\n\n{summary_text}", delay=0.03)
         await asyncio.sleep(2)
 
         # Phase 3: Health report
@@ -390,18 +398,17 @@ class ZombieGame(commands.Cog):
             await channel.send("🛑 Game terminated or health report failed.")
             return
 
-        # Split health and relationship summary
         health_lines = []
-        relationship_summary = ""
+        relationship_lines = []
         for line in raw_health.split("\n"):
             if line.strip().startswith("•"):
-                clean_line = bold_character_names(line.strip())
-                health_lines.append(clean_line)
+                health_lines.append(enforce_bullets(bold_character_names(line.strip())))
             elif line.strip():
-                relationship_summary += line.strip() + " "
+                relationship_lines.append(f"• {bold_character_names(line.strip())}")
 
         health_block = "\n".join(health_lines)
-        full_health = f"━━━━━━━━━━━━━━\n🩺 **Health Status**\n{health_block}\n\n💬 **Group Dynamics**\n{relationship_summary.strip()}"
+        relationship_block = "\n".join(relationship_lines)
+        full_health = f"━━━━━━━━━━━━━━\n🩺 **Health Status**\n\n{health_block}\n\n💬 **Group Dynamics**\n\n{relationship_block}"
         await chunk_and_stream(channel, full_health, delay=0.03)
         await asyncio.sleep(2)
 
@@ -410,8 +417,8 @@ class ZombieGame(commands.Cog):
         if g.terminated or not raw_dilemma:
             await channel.send("🛑 Game terminated or dilemma generation failed.")
             return
-        dilemma_text = bold_character_names(raw_dilemma)
-        await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n🧠 **Dilemma**\n{dilemma_text}", delay=0.03)
+        dilemma_text = enforce_bullets(bold_character_names(raw_dilemma))
+        await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n🧠 **Dilemma**\n\n{dilemma_text}", delay=0.03)
         await asyncio.sleep(2)
 
         # Phase 5: Choice generation
@@ -426,7 +433,7 @@ class ZombieGame(commands.Cog):
             end_game()
             return
 
-        choices_text = "━━━━━━━━━━━━━━\n🔀 **Choices**\n" + "\n".join(g.options)
+        choices_text = enforce_bullets("━━━━━━━━━━━━━━\n🔀 **Choices**\n\n" + "\n".join(g.options))
         choices_msg = await channel.send("...")
         await stream_text_wordwise(choices_msg, choices_text, delay=0.03)
         await choices_msg.add_reaction("1️⃣")
@@ -463,7 +470,7 @@ class ZombieGame(commands.Cog):
             {"role": "user", "content": outcome_prompt}
         ]
         raw_outcome = await generate_ai_text(messages, temperature=0.8)
-        outcome_text = bold_character_names(raw_outcome or "⚠️ Outcome generation failed. Proceeding with random deaths.")
+        outcome_text = enforce_bullets(bold_character_names(raw_outcome or "⚠️ Outcome generation failed. Proceeding with random deaths."))
 
         # Apply deaths
         deaths = random.sample(g.alive, k=random.randint(0, min(4, len(g.alive))))
@@ -476,9 +483,9 @@ class ZombieGame(commands.Cog):
         survivor_lines = "\n".join([f"• {bold_name(name)}" for name in survivors]) or "• None"
 
         g.last_events = (
-            f"━━━━━━━━━━━━━━\n🧾 **Outcome**\n{outcome_text}\n\n"
-            f"💀 **Deaths This Round**\n{death_lines}\n\n"
-            f"🧍 **Remaining Survivors**\n{survivor_lines}"
+            f"━━━━━━━━━━━━━━\n🧾 **Outcome**\n\n{outcome_text}\n\n"
+            f"💀 **Deaths This Round**\n\n{death_lines}\n\n"
+            f"🧍 **Remaining Survivors**\n\n{survivor_lines}"
         )
         await chunk_and_stream(channel, g.last_events, delay=0.03)
         update_stats(g)
@@ -489,7 +496,8 @@ class ZombieGame(commands.Cog):
             if len(g.alive) == 1:
                 await channel.send(f"🏆 {bold_name(g.alive[0])} is the sole survivor!")
             else:
-                await channel.send(f"🏁 Final survivors:\n" + "\n".join([f"• {bold_name(name)}" for name in g.alive]))
+                final_survivors = "\n".join([f"• {bold_name(name)}" for name in g.alive])
+                await channel.send(f"🏁 Final survivors:\n{final_survivors}")
             await self.end_summary(channel)
             end_game()
             return
@@ -499,39 +507,43 @@ class ZombieGame(commands.Cog):
     async def end_summary(self, channel: discord.TextChannel):
         g = active_game
         await channel.send("━━━━━━━━━━━━━━\n📜 **Game Summary**")
-        await channel.send("🪦 Deaths (most recent first):\n" + "\n".join([f"• {bold_name(name)}" for name in g.dead]))
+
+        deaths_block = "\n".join([f"• {bold_name(name)}" for name in g.dead]) or "• None"
+        await channel.send(f"🪦 **Deaths (most recent first)**\n\n{deaths_block}")
 
         await channel.send("━━━━━━━━━━━━━━\n📊 **Final Stats**")
-        await channel.send(f"🏅 Most helpful: {get_top_stat(g.stats['helpful'])}")
-        await channel.send(f"😈 Most sinister: {get_top_stat(g.stats['sinister'])}")
-        await channel.send(f"🔧 Most resourceful: {get_top_stat(g.stats['resourceful'])}")
+        await channel.send(f"🏅 Most helpful: • {get_top_stat(g.stats['helpful'])}")
+        await channel.send(f"😈 Most sinister: • {get_top_stat(g.stats['sinister'])}")
+        await channel.send(f"🔧 Most resourceful: • {get_top_stat(g.stats['resourceful'])}")
 
         bonds = sorted(g.stats["bonds"].items(), key=lambda x: x[1], reverse=True)
         conflicts = sorted(g.stats["conflicts"].items(), key=lambda x: x[1], reverse=True)
 
         if bonds:
-            await channel.send(f"🤝 Greatest bond: {bold_name(bonds[0][0][0])} & {bold_name(bonds[0][0][1])} ({bonds[0][1]} points)")
+            bond_pair = bonds[0][0]
+            await channel.send(f"🤝 Greatest bond:\n• {bold_name(bond_pair[0])} & {bold_name(bond_pair[1])} ({bonds[0][1]} points)")
         if conflicts:
-            await channel.send(f"⚔️ Biggest opps: {bold_name(conflicts[0][0][0])} vs {bold_name(conflicts[0][0][1])} ({conflicts[0][1]} points)")
+            conflict_pair = conflicts[0][0]
+            await channel.send(f"⚔️ Biggest opps:\n• {bold_name(conflict_pair[0])} vs {bold_name(conflict_pair[1])} ({conflicts[0][1]} points)")
 
-        await channel.send(f"🕊️ Most dignified: {get_top_stat(g.stats['dignified'])}")
+        await channel.send(f"🕊️ Most dignified: • {get_top_stat(g.stats['dignified'])}")
 
         recap_prompt = (
             f"🧠 Final recap request:\n"
-            f"Characters who died: {', '.join([name for name in g.dead])}\n"
-            f"Final survivors: {', '.join([name for name in g.alive])}\n"
+            f"Characters who died: {', '.join(g.dead)}\n"
+            f"Final survivors: {', '.join(g.alive)}\n"
             f"Key choices made: {g.last_choice}\n"
-            f"Strongest bond: {bonds[0][0][0]} & {bonds[0][0][1]}\n"
-            f"Biggest conflict: {conflicts[0][0][0]} vs {conflicts[0][0][1]}\n\n"
-            "🎬 Write a brief cinematic summary of the entire game. Include how characters died, what relationships changed, and any major emotional or strategic turning points. Keep it under 200 words."
+            f"Strongest bond: {bond_pair[0]} & {bond_pair[1]}\n"
+            f"Biggest conflict: {conflict_pair[0]} vs {conflict_pair[1]}\n\n"
+            "🎬 Write a brief cinematic summary of the entire game. Include how characters died, what relationships changed, and any major emotional or strategic turning points. Keep it under 200 words. Format the recap as bullet points."
         )
         messages = [
             {"role": "system", "content": "You are a horror narrator summarizing a zombie survival story."},
             {"role": "user", "content": recap_prompt}
         ]
         raw_recap = await generate_ai_text(messages, temperature=0.8)
-        recap_text = bold_character_names(raw_recap or "⚠️ Final recap generation failed.")
-        await chunk_and_stream(channel, "━━━━━━━━━━━━━━\n🎞️ **Final Recap**\n" + recap_text, delay=0.03)
+        recap_text = enforce_bullets(bold_character_names(raw_recap or "⚠️ Final recap generation failed."))
+        await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n🎞️ **Final Recap**\n\n{recap_text}", delay=0.03)
 
         await channel.send("🎬 Thanks for surviving (or not) the zombie apocalypse. Until next time...")
 
