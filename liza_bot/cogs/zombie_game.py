@@ -177,7 +177,7 @@ def build_prompt():
     return prompt
 
 def fallback_story():
-    survivors = r andom.sample(active_game.alive, k=min(3, len(active_game.alive)))
+    survivors = random.sample(active_game.alive, k=min(3, len(active_game.alive)))
     threat = random.choice(["a horde of fast zombies", "a collapsing building", "a betrayal from within"])
     option1 = f"1. The group tries to escape together, risking injury."
     option2 = f"2. One survivor distracts the threat while others flee."
