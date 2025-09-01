@@ -215,6 +215,19 @@ async def on_guild_channel_pins_update(channel, _):
             await forward_media(msg)
 
 @bot.event
+async def on_guild_channel_pins_update(channel, _):
+    if channel.id != SOURCE_CHANNEL_ID:
+        return
+    async for msg in channel.history(limit=50):
+        if msg.type == discord.MessageType.pins_add:
+            try:
+                await msg.delete()
+            except discord.Forbidden:
+                pass
+        elif msg.pinned:
+            await forward_media(msg)
+
+@bot.event
 async def on_ready():
     cogs_to_load = [
         "cogs.birthday",
@@ -230,19 +243,18 @@ async def on_ready():
     for cog in cogs_to_load:
         try:
             await bot.load_extension(cog)
-            print(f"✅ Loaded {cog}")
+            logger.info(f"✅ Loaded {cog}")
         except Exception as e:
-            print(f"❌ Failed to load {cog}: {e}")
+            logger.error(f"❌ Failed to load {cog}: {e}")
 
     try:
         synced = await bot.tree.sync()
-        print(f"🌐 Synced {len(synced)} slash commands.")
+        logger.info(f"🌐 Synced {len(synced)} slash commands.")
     except Exception as e:
-        print(f"⚠️ Failed to sync slash commands: {e}")
+        logger.warning(f"⚠️ Failed to sync slash commands: {e}")
 
-    print(f"👋 Logged in as {bot.user.name}")
+    logger.info(f"👋 Logged in as {bot.user.name}")
 
 # 🚀 Launch
 keep_alive()
 bot.run(TOKEN)
-
