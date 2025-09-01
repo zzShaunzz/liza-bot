@@ -389,13 +389,27 @@ class ZombieGame(commands.Cog):
         g.round += 1
 
         # Phase 1: Intro scene
-        intro_text = await generate_intro_scene()
+        try:
+            intro_text = await generate_intro_scene()
+        except RuntimeError as e:
+            logger.error(f"🧟 Intro scene failed: {e}")
+            await channel.send("⚠️ Failed to generate the intro scene. The game cannot continue.")
+            end_game()
+            return
+
         intro_msg = await channel.send("🎭 Loading scene...")
         await stream_text(intro_msg, f"🎭 **Scene**\n{intro_text}", chunk_size=6, delay=0.6)
         await asyncio.sleep(15)
 
         # Phase 2: Dilemma
-        dilemma_text = await generate_story()
+        try:
+            dilemma_text = await generate_story()
+        except RuntimeError as e:
+            logger.error(f"🧟 Dilemma generation failed: {e}")
+            await channel.send("⚠️ Failed to generate the dilemma. The game cannot continue.")
+            end_game()
+            return
+
         g.options = extract_options(dilemma_text)
         dilemma_msg = await channel.send("🧠 Loading dilemma...")
         await stream_text(dilemma_msg, f"🧠 **Dilemma**\n{dilemma_text}", chunk_size=6, delay=0.6)
@@ -442,7 +456,7 @@ class ZombieGame(commands.Cog):
     async def end_summary(self, channel: discord.TextChannel):
         g = active_game
         await channel.send("📜 **Game Summary**")
-        await channel.send("🪦 Deaths (most recent first):\n" + "\n".join([f"• {name}" for name in g.dead]))
+        await channel.send("🪦 Deaths (most recent first):\n" + "\n.join([f'• {name}' for name in g.dead])")
 
         await channel.send("📊 **Final Stats**")
         await channel.send(f"🏅 Most helpful: {get_top_stat(g.stats['helpful'])}")
