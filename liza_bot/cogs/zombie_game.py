@@ -219,9 +219,9 @@ async def generate_intro_scene():
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             logger.debug(f"🧟 Raw intro output (attempt {attempt + 1}):\n{content}")
 
+        return content
+            logger.info("[ZombieGame] ✅ Intro scene generated.")
             return content
-                logger.info("[ZombieGame] ✅ Intro scene generated.")
-                return content
 
             logger.warning(f"⚠️ Intro scene too short on attempt {attempt + 1}")
             await asyncio.sleep(2 ** attempt)
