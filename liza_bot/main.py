@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # 🔒 Load environment variables
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-APPLICATION_ID = os.getenv("APPLICATION_ID")  # ✅ Add this to fix slash command sync
+APPLICATION_ID = os.getenv("APPLICATION_ID")
 if not TOKEN or not APPLICATION_ID:
     logger.error("❌ DISCORD_BOT_TOKEN or APPLICATION_ID is missing.")
     sys.exit(1)
@@ -38,12 +38,22 @@ def keep_alive():
 # 🤖 Bot & Intents
 intents = discord.Intents.default()
 intents.message_content = intents.messages = intents.reactions = intents.guilds = True
-intents.members = True  # 🔥 Required for fetch_members and role audits
+intents.members = True
 
-bot = commands.Bot(
+class MyBot(commands.Bot):
+    async def setup_hook(self):
+        keep_alive()
+        await load_cogs(self)
+        try:
+            synced = await self.tree.sync()
+            logging.info(f"🌐 Synced {len(synced)} slash commands.")
+        except Exception as e:
+            logging.warning(f"⚠️ Failed to sync slash commands: {e}")
+
+bot = MyBot(
     command_prefix=["!", "/"],
     intents=intents,
-    application_id=int(APPLICATION_ID)  # ✅ Required for slash command registration
+    application_id=int(APPLICATION_ID)
 )
 tree = bot.tree
 
@@ -51,7 +61,7 @@ tree = bot.tree
 SOURCE_CHANNEL_ID = 1196349674139963485
 TARGET_CHANNEL_ID = 1398892088984076368
 TROUBLESHOOT_CHANNEL_ID = 1399117366926770267
-STARBOARD_CHANNEL_ID = 123456789012345678  # Replace with your actual starboard channel ID
+STARBOARD_CHANNEL_ID = 123456789012345678
 TRIGGER_EMOJI = "⭐"
 HEART_EMOJIS = ["❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💖","💘","💕","💞","💓","💗","💟","❣️","💌"]
 
@@ -61,7 +71,6 @@ forwarded_hashes = set()
 HASH_ORIGINS, HASH_SOURCE, LOGGED_DUPES = {}, {}, set()
 HASH_FILE = "forwarded_hashes.txt"
 
-# 📥 Load hash data
 if os.path.exists(HASH_FILE):
     with open(HASH_FILE, "r") as f:
         for line in f:
@@ -140,33 +149,6 @@ async def forward_media(msg: discord.Message):
 
     processed_messages.add(msg.id)
 
-async def run_cleardupe(channel, guild, trigger=None, processing=None):
-    trouble = bot.get_channel(TROUBLESHOOT_CHANNEL_ID)
-    found = []
-
-    async for msg in channel.history(limit=100):
-        for a in msg.attachments:
-            if a.filename.lower().endswith(".gif"): continue
-            try: hval = await compute_hash(a)
-            except: continue
-            if hval in forwarded_hashes and HASH_ORIGINS.get(hval) != str(msg.id):
-                src_id = HASH_SOURCE.get(hval, "unknown")
-                link = f"https://discord.com/channels/{guild.id}/{SOURCE_CHANNEL_ID}/{src_id}"
-                found.append((a.filename, msg.id, link))
-
-    if found:
-        for fname, msg_id, link in found:
-            await trouble.send(f"♻️ Removed dupe: `{fname}`\n🔗 [Original]({link})")
-            try: await (await channel.fetch_message(msg_id)).delete()
-            except: pass
-    else:
-        await trouble.send("✅ No duplicates found.")
-
-    for m in (trigger, processing):
-        if m:
-            try: await m.delete()
-            except: pass
-
 @bot.command(name="cleardupe")
 async def cleardupe_legacy(ctx):
     if ctx.channel.id != TARGET_CHANNEL_ID:
@@ -198,7 +180,6 @@ async def debug_status(ctx):
     embed.add_field(name="Guild", value=ctx.guild.name if ctx.guild else "DM", inline=False)
     embed.add_field(name="Channel", value=ctx.channel.name, inline=False)
 
-    # Environment checks
     zombie_channel_id = os.getenv("ZOMBIE_CHANNEL_ID")
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     model_name = os.getenv("MODEL", "openrouter/mixtral")
@@ -207,7 +188,6 @@ async def debug_status(ctx):
     embed.add_field(name="OPENROUTER_API_KEY", value="✅ Loaded" if openrouter_key else "❌ Missing", inline=False)
     embed.add_field(name="MODEL", value=model_name, inline=False)
 
-    # Cog check
     zombie_cog = "✅" if "ZombieGame" in bot.cogs else "❌ Not loaded"
     embed.add_field(name="ZombieGame Cog", value=zombie_cog, inline=False)
 
@@ -228,7 +208,6 @@ async def on_raw_reaction_add(payload):
 
     await forward_media(msg)
 
-    # ⭐ Starboard post immediately
     if emoji == TRIGGER_EMOJI:
         starboard = bot.get_channel(STARBOARD_CHANNEL_ID)
         if not starboard: return
@@ -252,21 +231,6 @@ async def on_guild_channel_pins_update(channel, _):
         elif msg.pinned:
             await forward_media(msg)
 
-@bot.event
-async def on_guild_channel_pins_update(channel, _):
-    if channel.id != SOURCE_CHANNEL_ID:
-        return
-    async for msg in channel.history(limit=50):
-        if msg.type == discord.MessageType.pins_add:
-            try:
-                await msg.delete()
-            except discord.Forbidden:
-                pass
-        elif msg.pinned:
-            await forward_media(msg)
-
-import traceback  # make sure this is at the top of your file
-
 # 🔧 Cog Loader
 async def load_cogs(bot: commands.Bot):
     cogs_to_load = [
@@ -288,24 +252,11 @@ async def load_cogs(bot: commands.Bot):
             logging.error(f"❌ Failed to load {cog}: {e}")
             logging.debug(traceback.format_exc())
 
-# 🚀 Startup Sequence
-class MyBot(commands.Bot):
-    async def setup_hook(self):
-        keep_alive()  # Optional Flask server
-        await load_cogs(self)  # Pass self explicitly
-
-        try:
-            synced = await self.tree.sync()
-            print(f"🌐 Synced {len(synced)} slash commands.")
-        except Exception as e:
-            print(f"⚠️ Failed to sync slash commands: {e}")
-
 # 🏁 Launch Bot
 async def main():
+    logging.info("🚀 Starting bot...")
     async with bot:
-        print("🚀 Starting bot...")
         await bot.start(TOKEN)
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
