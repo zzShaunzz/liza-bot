@@ -152,16 +152,27 @@ def end_game():
 def is_active():
     return active_game is not None
 
-def build_prompt():
+def build_context():
     g = active_game
-    prompt = f"Round {g.round}\n"
+    context = f"Round {g.round}\n"
+
     if g.round > 1:
-        prompt += f"Last round recap: {g.last_events}\n"
-    prompt += f"Alive characters: {', '.join(g.alive)}\n"
-    traits_summary = "\n".join([f"{name}: {', '.join(CHARACTER_INFO[name]['traits'])}" for name in g.alive])
-    prompt += f"\nCharacter traits:\n{traits_summary}\n"
-    prompt += "Describe a new zombie-related problem the group faces. Include character insights, emerging tensions, and two options to vote on.\n"
-    return prompt
+        context += f"Last round recap: {g.last_events}\n"
+
+    context += f"Alive characters: {', '.join(g.alive)}\n"
+
+    traits_summary = "\n".join(
+        [f"{name}: {', '.join(CHARACTER_INFO[name]['traits'])}" for name in g.alive]
+    )
+    context += f"\nCharacter traits:\n{traits_summary}\n"
+
+    context += (
+        "Write a vivid scene describing what each character is doing at the start of this round. "
+        "Include emotional tension, physical actions, and hints of interpersonal dynamics. "
+        "Do not describe the new dilemma yet—just set the scene.\n"
+    )
+
+    return context
 
 def fallback_story():
     survivors = random.sample(active_game.alive, k=min(3, len(active_game.alive)))
@@ -172,10 +183,10 @@ def fallback_story():
         f"2. One survivor distracts the threat while others flee."
     )
 
-async def generate_story():
+async def generate_intro_scene():
     messages = [
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
-        {"role": "user", "content": build_prompt()}
+        {"role": "user", "content": build_context()}
     ]
 
     try:
@@ -188,22 +199,81 @@ async def generate_story():
             json={
                 "model": MODEL,
                 "messages": messages,
-                "temperature": 0.8
+                "temperature": 0.9
             }
         )
 
         data = response.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
-        if response.status_code != 200 or "choices" not in data or not data["choices"]:
-            logger.warning("⚠️ OpenRouter response malformed or empty.")
-            return fallback_story()
+        if not content:
+            logger.warning("⚠️ AI intro scene was empty. Falling back.")
+            return "The survivors gather in silence, each lost in thought as the night deepens."
 
-        return data["choices"][0]["message"]["content"]
+        logger.info("[ZombieGame] ✅ Intro scene generated.")
+        return content
 
     except Exception as e:
-        logger.error(f"💥 Exception during story generation: {e}")
-        return fallback_story()
-        
+        logger.error(f"💥 Failed to generate intro scene: {e}")
+        return "The survivors gather in silence, each lost in thought as the night deepens."
+
+def build_dilemma_context():
+    g = active_game
+    context = f"Round {g.round}\n"
+
+    if g.round > 1:
+        context += f"Last round recap: {g.last_events}\n"
+
+    context += f"Alive characters: {', '.join(g.alive)}\n"
+
+    traits_summary = "\n".join(
+        [f"{name}: {', '.join(CHARACTER_INFO[name]['traits'])}" for name in g.alive]
+    )
+    context += f"\nCharacter traits:\n{traits_summary}\n"
+
+    context += (
+        "Now describe a new zombie-related dilemma the group faces. "
+        "Include emotional tension, character reactions, and two distinct options for the group to vote on. "
+        "Format the options clearly as '1.' and '2.' at the end of the story.\n"
+    )
+
+    return context
+
+async def generate_story():
+    messages = [
+        {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
+        {"role": "user", "content": build_dilemma_context()}
+    ]
+
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": MODEL,
+                "messages": messages,
+                "temperature": 0.85
+            }
+        )
+
+        logger.debug(f"[ZombieGame] 🧠 Raw response: {response.text}")
+        data = response.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+
+        if not content:
+            logger.warning("⚠️ AI dilemma response was empty.")
+            return "The group faces a mysterious threat, but the details are unclear."
+
+        logger.info("[ZombieGame] ✅ AI dilemma generated.")
+        return content
+
+    except Exception as e:
+        logger.error(f"💥 Failed to generate dilemma: {e}")
+        return "The group faces a mysterious threat, but the details are unclear."
+
 async def tally_votes(message: discord.Message):
     votes = {"1️⃣": 0, "2️⃣": 0}
     for reaction in message.reactions:
@@ -274,15 +344,21 @@ class ZombieGame(commands.Cog):
         g = active_game
         g.round += 1
 
-        story = await generate_story()
-        g.options = extract_options(story)
+        # Phase 1: AI-generated intro scene
+        intro = await generate_intro_scene()
+        await channel.send(f"🎭 **Scene**\n{intro}")
+        await asyncio.sleep(15)
 
-        await channel.send(f"**Round {g.round}**\n{story}")
+        # Phase 2: AI-generated dilemma
+        dilemma = await generate_story()
+        g.options = extract_options(dilemma)
+        await channel.send(f"🧠 **Dilemma**\n{dilemma}")
+
         vote_msg = await channel.send("Vote now! ⏳ 15 seconds...\nReact with 1️⃣ or 2️⃣")
         await vote_msg.add_reaction("1️⃣")
         await vote_msg.add_reaction("2️⃣")
-
         await asyncio.sleep(15)
+
         vote_msg = await channel.fetch_message(vote_msg.id)
         votes = await tally_votes(vote_msg)
 
@@ -336,6 +412,7 @@ class ZombieGame(commands.Cog):
             await channel.send(f"⚔️ Biggest opps: {conflicts[0][0][0]} vs {conflicts[0][0][1]} ({conflicts[0][1]} points)")
 
         await channel.send(f"🕊️ Most dignified: {get_top_stat(g.stats['dignified'])}")
+        await channel.send("🎬 Thanks for surviving (or not) the zombie apocalypse. Until next time...")
 
 # 🔧 Cog setup
 async def setup(bot: commands.Bot):
