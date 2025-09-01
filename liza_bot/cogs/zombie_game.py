@@ -360,8 +360,9 @@ class ZombieGame(commands.Cog):
 class VerifyCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Do not use await here
 
 async def setup(bot):
     await bot.add_cog(VerifyCog(bot))
+    bot.loop.create_task(cog.backfill_verified_users())
     print("✅ ZombieGame cog loaded")
+    
