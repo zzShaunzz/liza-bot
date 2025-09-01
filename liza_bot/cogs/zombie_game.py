@@ -177,6 +177,7 @@ async def generate_story():
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
         {"role": "user", "content": build_prompt()}
     ]
+
     try:
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -190,15 +191,19 @@ async def generate_story():
                 "temperature": 0.8
             }
         )
+
         data = response.json()
+
         if response.status_code != 200 or "choices" not in data or not data["choices"]:
             logger.warning("⚠️ OpenRouter response malformed or empty.")
             return fallback_story()
+
         return data["choices"][0]["message"]["content"]
+
     except Exception as e:
         logger.error(f"💥 Exception during story generation: {e}")
         return fallback_story()
-
+        
 async def tally_votes(message: discord.Message):
     votes = {"1️⃣": 0, "2️⃣": 0}
     for reaction in message.reactions:
