@@ -224,7 +224,7 @@ async def on_ready():
         "cogs.verify",
         "cogs.nostalgia_pull",
         "cogs.nostalgia_media",
-        "cogs.zombie_game"
+        "cogs.zombie_game",
     ]
 
     for cog in cogs_to_load:
