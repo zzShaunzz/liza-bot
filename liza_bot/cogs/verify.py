@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import logging
+import asyncio
 
 # 🔒 Load secrets from environment variables
 RULES_MESSAGE_ID = int(os.environ.get("RULES_MESSAGE_ID", 0))
@@ -12,10 +13,6 @@ OWNER_ID = int(os.environ.get("OWNER_ID", 0))  # Optional: restrict !auditverify
 class VerifyCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-
-    async def cog_load(self):
-        logging.info("[VerifyCog] 🔄 cog_load triggered. Scheduling backfill task.")
-        self.bot.loop.create_task(self.backfill_verified_users())
 
     async def backfill_verified_users(self):
         await self.bot.wait_until_ready()
@@ -138,6 +135,12 @@ class VerifyCog(commands.Cog):
             except Exception as e:
                 logging.warning(f"[VerifyCog] ⚠️ Failed to remove role: {e}")
 
-# Required setup function for cog loading
+# ✅ Safe async setup function
 async def setup(bot: commands.Bot):
-    await bot.add_cog(VerifyCog(bot))
+    cog = VerifyCog(bot)
+    await bot.add_cog(cog)
+    try:
+        asyncio.create_task(cog.backfill_verified_users())
+        logging.info("[VerifyCog] 🔄 Scheduled backfill_verified_users task.")
+    except Exception as e:
+        logging.exception("[VerifyCog] ❌ Failed to schedule backfill task.")
