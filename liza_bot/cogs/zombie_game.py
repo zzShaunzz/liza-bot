@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import os, random, asyncio, logging, requests
 from dotenv import load_dotenv
+from collections import defaultdict
 
 # 🧠 Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -13,10 +14,6 @@ load_dotenv()
 ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL = os.getenv("MODEL", "meta-llama/llama-3-8b-instruct")
-
-if not OPENROUTER_API_KEY:
-    logger.error("❌ OPENROUTER_API_KEY is missing.")
-    raise SystemExit(1)
 
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
@@ -33,7 +30,76 @@ CHARACTER_INFO = {
         "likely_pairs": ["Shaun Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
         "likely_conflicts": ["Dylan Pastorin"]
     },
-    # ... [Include all other characters as before]
+    "Dylan Pastorin": {
+        "age": 21, "gender": "Male",
+        "traits": ["mentally brave", "protective", "strong with tools", "slow mover", "manipulation-prone", "extroverted"],
+        "siblings": [],
+        "likely_pairs": ["Noah Nainggolan", "Gabe Muy", "Shaun Sadsarin", "Vivian Muy"],
+        "likely_conflicts": ["Kate Nainggolan"]
+    },
+    "Noah Nainggolan": {
+        "age": 18, "gender": "Male",
+        "traits": ["physically capable", "fighter", "not a planner"],
+        "siblings": [],
+        "likely_pairs": ["Gabe Muy", "Jill Nainggolan", "Kate Nainggolan", "Dylan Pastorin"],
+        "likely_conflicts": ["Jill Nainggolan"]
+    },
+    "Jill Nainggolan": {
+        "age": 16, "gender": "Female",
+        "traits": ["conniving", "lucky", "swimmer"],
+        "siblings": ["Kate Nainggolan", "Nico Muy"],
+        "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
+        "likely_conflicts": ["Aiden Muy"]
+    },
+    "Kate Nainggolan": {
+        "age": 14, "gender": "Female",
+        "traits": ["manipulative", "quick-witted", "enduring", "persuasive"],
+        "siblings": ["Jill Nainggolan", "Nico Muy"],
+        "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
+        "likely_conflicts": ["Nico Muy"]
+    },
+    "Vivian Muy": {
+        "age": 18, "gender": "Female",
+        "traits": ["wise", "calm", "insightful", "secret genius"],
+        "siblings": ["Gabe Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Dylan Pastorin", "Ella Muy", "Aiden Muy", "Addison Sadsarin"],
+        "likely_conflicts": ["Gabe Muy"]
+    },
+    "Gabe Muy": {
+        "age": 17, "gender": "Male",
+        "traits": ["strong", "peacekeeper", "withdraws under pressure", "hand-to-hand expert"],
+        "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
+        "likely_conflicts": ["Shaun Sadsarin"]
+    },
+    "Aiden Muy": {
+        "age": 14, "gender": "Male",
+        "traits": ["agile", "crafty", "chef", "mental reader"],
+        "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
+        "likely_conflicts": ["Addison Sadsarin"]
+    },
+    "Ella Muy": {
+        "age": 11, "gender": "Female",
+        "traits": ["physically reliant", "luckiest"],
+        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"],
+        "likely_pairs": ["Addison Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
+        "likely_conflicts": ["Nico Muy"]
+    },
+    "Nico Muy": {
+        "age": 12, "gender": "Male",
+        "traits": ["daring", "comical", "risk-taker", "needs guidance"],
+        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy", "Jill Nainggolan", "Kate Nainggolan"],
+        "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
+        "likely_conflicts": ["Ella Muy"]
+    },
+    "Jordan": {
+        "age": 13, "gender": "Male",
+        "traits": ["gentle", "quietly skilled", "stronger than he seems"],
+        "siblings": [],
+        "likely_pairs": ["Nico Muy", "Gabe Muy", "Aiden Muy", "Dylan Pastorin"],
+        "likely_conflicts": ["Noah Nainggolan"]
+    }
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
 
@@ -51,8 +117,8 @@ class GameState:
             "helpful": {name: 0 for name in CHARACTERS},
             "sinister": {name: 0 for name in CHARACTERS},
             "resourceful": {name: 0 for name in CHARACTERS},
-            "bonds": {},
-            "conflicts": {},
+            "bonds": defaultdict(int),
+            "conflicts": defaultdict(int),
             "dignified": {name: 100 for name in CHARACTERS}
         }
         self.story_seed = self.generate_seed()
@@ -76,7 +142,7 @@ def start_game(user_id: int):
 
     for i in range(len(CHARACTERS)):
         for j in range(i + 1, len(CHARACTERS)):
-            pair = tuple(sorted((CHARACTERS[i], CHARACTERS[j])))
+            pair = tuple(sorted((CHARACTERS[i], CHARACTER_INFO[j])))
             active_game.stats["bonds"][pair] = 1
 
     for name, info in CHARACTER_INFO.items():
@@ -85,7 +151,7 @@ def start_game(user_id: int):
             active_game.stats["bonds"][pair] += 2
         for rival in info.get("likely_conflicts", []):
             pair = tuple(sorted((name, rival)))
-            active_game.stats["conflicts"][pair] = active_game.stats["conflicts"].get(pair, 0) + 2
+            active_game.stats["conflicts"][pair] += 2
 
 def end_game():
     global active_game
@@ -100,8 +166,7 @@ def build_intro_context():
     context = f"🧠 Setting: {g.story_seed}\n"
 
     if g.round > 1:
-        context += f"\n📍 Outcome of Round {g.round - 1}:\n"
-        context += f"{g.last_events}\n"
+        context += f"\n📍 Outcome of Round {g.round - 1}:\n{g.last_events}\n"
 
     context += f"\n🧍 Alive characters:\n{', '.join(g.alive)}\n"
 
@@ -111,14 +176,10 @@ def build_intro_context():
     context += f"\n🧠 Character traits:\n{traits_summary}\n"
 
     context += (
-        "\n🎬 Write a vivid, immersive zombie survival scene of at least 100 words. "
-        "Describe what each character is doing at the start of this round. "
-        "Include emotional tension, physical actions, and interpersonal dynamics. "
-        "Make the scene chronological and continuous from the previous round. "
-        "Format the scene with paragraph breaks and bullet points for each character. "
-        "Do not describe any new threat or dilemma yet."
+        "\n🎬 Write a vivid zombie survival scene of at least 100 words. "
+        "Describe what each character is doing. Format with paragraph breaks and bullet points. "
+        "Do not introduce a new threat yet."
     )
-
     return context
 
 def build_dilemma_context():
@@ -130,7 +191,6 @@ def build_dilemma_context():
 async def generate_ai_text(messages, temperature=0.9):
     for attempt in range(3):
         if active_game and active_game.terminated:
-            logger.warning("🛑 Game terminated mid-generation.")
             return None
         try:
             response = requests.post(
@@ -145,22 +205,14 @@ async def generate_ai_text(messages, temperature=0.9):
                     "temperature": temperature
                 }
             )
-
-            logger.debug(f"🧟 Full response JSON:\n{response.text}")
             data = response.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-            logger.debug(f"🧟 Raw output (attempt {attempt + 1}):\n{content}")
-
             if content:
                 return content
-
-            logger.warning(f"⚠️ Empty response on attempt {attempt + 1}")
             await asyncio.sleep(2 ** attempt)
-
         except Exception as e:
-            logger.error(f"💥 AI generation error on attempt {attempt + 1}: {e}")
+            logger.error(f"AI error: {e}")
             await asyncio.sleep(2 ** attempt)
-
     return None
 
 async def generate_intro_scene():
@@ -169,7 +221,7 @@ async def generate_intro_scene():
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
         {"role": "user", "content": prompt}
     ]
-    return await generate_ai_text(messages, temperature=0.9)
+    return await generate_ai_text(messages)
 
 async def generate_dilemma():
     prompt = build_dilemma_context()
@@ -179,10 +231,36 @@ async def generate_dilemma():
     ]
     return await generate_ai_text(messages, temperature=0.7)
 
-def extract_options(text: str):
-    lines = text.split("\n")
-    options = [line for line in lines if line.strip().startswith(("1.", "2."))]
-    return options if len(options) == 2 else ["1. Option A", "2. Option B"]
+async def stream_text(message: discord.Message, full_text: str, chunk_size: int = 6, delay: float = 0.5):
+    if not full_text:
+        await message.edit(content="⚠️ Failed to generate text.")
+        return
+    paragraphs = full_text.split("\n")
+    formatted = ""
+    for para in paragraphs:
+        if para.strip():
+            formatted += f"• {para.strip()}\n"
+    chunks = formatted.split()
+    output = ""
+    for i in range(0, len(chunks), chunk_size):
+        if active_game and active_game.terminated:
+            return
+        output += " ".join(chunks[i:i+chunk_size]) + " "
+        try:
+            await message.edit(content=output.strip())
+            await asyncio.sleep(delay)
+        except:
+            break
+
+async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
+    for i in range(seconds, 0, -1):
+        if active_game and active_game.terminated:
+            return
+        try:
+            await message.edit(content=f"{prefix} {i}")
+            await asyncio.sleep(1)
+        except:
+            break
 
 async def tally_votes(message: discord.Message):
     votes = {"1️⃣": 0, "2️⃣": 0}
@@ -201,10 +279,10 @@ def update_stats(g: GameState):
     pairs = random.sample(g.alive, k=min(4, len(g.alive)))
     for i in range(0, len(pairs)-1, 2):
         pair = tuple(sorted((pairs[i], pairs[i+1])))
-        g.stats["bonds"][pair] = g.stats["bonds"].get(pair, 0) + random.randint(1, 3)
+        g.stats["bonds"][pair] += random.randint(1, 3)
     if len(g.alive) > 3:
         conflict_pair = tuple(sorted(random.sample(g.alive, 2)))
-        g.stats["conflicts"][conflict_pair] = g.stats["conflicts"].get(conflict_pair, 0) + random.randint(1, 2)
+        g.stats["conflicts"][conflict_pair] += random.randint(1, 2)
     for name in g.alive:
         g.stats["dignified"][name] -= random.randint(0, 2)
 
@@ -213,41 +291,6 @@ def get_top_stat(stat_dict: dict):
         return "None"
     top = max(stat_dict.items(), key=lambda x: x[1])
     return f"{top[0]} ({top[1]} points)"
-
-async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
-    for i in range(seconds, 0, -1):
-        if active_game and active_game.terminated:
-            logger.info("🛑 Countdown interrupted by game termination.")
-            return
-        try:
-            await message.edit(content=f"{prefix} {i}")
-            await asyncio.sleep(1)
-        except Exception as e:
-            logger.warning(f"⚠️ Countdown edit failed: {e}")
-            break
-
-async def stream_text(message: discord.Message, full_text: str, chunk_size: int = 6, delay: float = 0.5):
-    if not full_text:
-        await message.edit(content="⚠️ Failed to generate text.")
-        return
-    paragraphs = full_text.split("\n")
-    formatted = ""
-    for para in paragraphs:
-        if para.strip():
-            formatted += f"• {para.strip()}\n"
-    chunks = formatted.split()
-    output = ""
-    for i in range(0, len(chunks), chunk_size):
-        if active_game and active_game.terminated:
-            logger.info("🛑 Streaming interrupted by game termination.")
-            return
-        output += " ".join(chunks[i:i+chunk_size]) + " "
-        try:
-            await message.edit(content=output.strip())
-            await asyncio.sleep(delay)
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to stream text: {e}")
-            break
 
 class ZombieGame(commands.Cog):
     def __init__(self, bot: commands.Bot):
