@@ -151,7 +151,7 @@ def is_active():
 async def generate_ai_text(messages, temperature=0.9):
     if active_game and active_game.terminated:
         return None
-
+    
     payload = {
         "model": MODEL,
         "messages": messages,
@@ -193,6 +193,11 @@ async def generate_unique_setting():
         {"role": "user", "content": "🎬 Generate a unique setting for a zombie survival story. Be vivid, eerie, and specific. Avoid generic locations. Describe the environment in one sentence."}
     ]
     return await generate_ai_text(messages)
+
+async def start_game_async(user_id: int):
+    global active_game
+    active_game = GameState(user_id)
+    active_game.story_seed = await generate_unique_setting()
 
 def build_scene_prompt():
     g = active_game
