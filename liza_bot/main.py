@@ -268,7 +268,7 @@ async def on_guild_channel_pins_update(channel, _):
 import traceback  # make sure this is at the top of your file
 
 # 🔧 Cog Loader
-async def load_cogs():
+async def load_cogs(bot: commands.Bot):
     cogs_to_load = [
         "cogs.birthday",
         "cogs.liza_ai",
