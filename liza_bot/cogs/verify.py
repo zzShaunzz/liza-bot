@@ -14,7 +14,6 @@ class VerifyCog(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
-        # ✅ Safe async hook for post-init logic
         logging.info("[VerifyCog] 🔄 cog_load triggered. Scheduling backfill task.")
         self.bot.loop.create_task(self.backfill_verified_users())
 
