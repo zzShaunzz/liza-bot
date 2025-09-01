@@ -17,64 +17,100 @@ MODEL = os.getenv("MODEL")
 
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
-        "age": 15, "gender": "Male",
+        "age": 15,
+        "gender": "Male",
         "traits": ["organizer", "strong", "fast", "heat-sensitive", "pattern-adapter"],
-        "siblings": ["Addison Sadsarin"]
+        "siblings": ["Addison Sadsarin"],
+        "likely_pairs": ["Addison Sadsarin", "Aiden Muy", "Gabe Muy", "Dylan Pastorin"],
+        "likely_conflicts": ["Jordan"]
     },
     "Addison Sadsarin": {
-        "age": 16, "gender": "Female",
+        "age": 16,
+        "gender": "Female",
         "traits": ["kind", "patient", "versatile", "physically weak", "slow decision-maker"],
-        "siblings": ["Shaun Sadsarin"]
+        "siblings": ["Shaun Sadsarin"],
+        "likely_pairs": ["Shaun Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
+        "likely_conflicts": ["Dylan Pastorin"]
     },
     "Dylan Pastorin": {
-        "age": 21, "gender": "Male",
+        "age": 21,
+        "gender": "Male",
         "traits": ["mentally brave", "protective", "strong with tools", "slow mover", "manipulation-prone", "extroverted"],
-        "siblings": []
+        "siblings": [],
+        "likely_pairs": ["Noah Nainggolan", "Gabe Muy", "Shaun Sadsarin", "Vivian Muy"],
+        "likely_conflicts": ["Kate Nainggolan"]
     },
     "Noah Nainggolan": {
-        "age": 18, "gender": "Male",
+        "age": 18,
+        "gender": "Male",
         "traits": ["physically capable", "fighter", "not a planner"],
-        "siblings": ["Kate Nainggolan", "Jill Nainggolan"]
+        "siblings": ["Kate Nainggolan", "Jill Nainggolan"],
+        "likely_pairs": ["Gabe Muy", "Jill Nainggolan", "Kate Nainggolan", "Dylan Pastorin"],
+        "likely_conflicts": ["Jill Nainggolan"]
     },
     "Jill Nainggolan": {
-        "age": 16, "gender": "Female",
+        "age": 16,
+        "gender": "Female",
         "traits": ["conniving", "lucky", "swimmer"],
-        "siblings": ["Kate Nainggolan", "Noah Nainggolan"]
+        "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
+        "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
+        "likely_conflicts": ["Noah Nainggolan"]
     },
     "Kate Nainggolan": {
-        "age": 14, "gender": "Female",
+        "age": 14,
+        "gender": "Female",
         "traits": ["manipulative", "quick-witted", "enduring", "persuasive"],
-        "siblings": ["Jill Nainggolan", "Noah Nainggolan"]
+        "siblings": ["Jill Nainggolan", "Noah Nainggolan"],
+        "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
+        "likely_conflicts": ["Nico Muy"]
     },
     "Vivian Muy": {
-        "age": 18, "gender": "Female",
+        "age": 18,
+        "gender": "Female",
         "traits": ["wise", "calm", "insightful", "secret genius"],
-        "siblings": ["Gabe Muy", "Aiden Muy", "Ella Muy", "Nico Muy"]
+        "siblings": ["Gabe Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Dylan Pastorin", "Ella Muy", "Aiden Muy", "Addison Sadsarin"],
+        "likely_conflicts": ["Gabe Muy"]
     },
     "Gabe Muy": {
-        "age": 17, "gender": "Male",
+        "age": 17,
+        "gender": "Male",
         "traits": ["strong", "peacekeeper", "withdraws under pressure", "hand-to-hand expert"],
-        "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"]
+        "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
+        "likely_conflicts": ["Addison Sadsarin"]
     },
     "Aiden Muy": {
-        "age": 14, "gender": "Male",
+        "age": 14,
+        "gender": "Male",
         "traits": ["agile", "crafty", "chef", "mental reader"],
-        "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"]
+        "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
+        "likely_conflicts": ["Kate Nainggolan"]
     },
     "Ella Muy": {
-        "age": 11, "gender": "Female",
+        "age": 11,
+        "gender": "Female",
         "traits": ["physically reliant", "luckiest"],
-        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"]
+        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"],
+        "likely_pairs": ["Addison Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
+        "likely_conflicts": ["Nico Muy"]
     },
     "Nico Muy": {
-        "age": 12, "gender": "Male",
+        "age": 12,
+        "gender": "Male",
         "traits": ["daring", "comical", "risk-taker", "needs guidance"],
-        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"]
+        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"],
+        "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
+        "likely_conflicts": ["Ella Muy"]
     },
     "Jordan": {
-        "age": 13, "gender": "Male",
+        "age": 13,
+        "gender": "Male",
         "traits": ["gentle", "quietly skilled", "stronger than he seems"],
-        "siblings": []
+        "siblings": [],
+        "likely_pairs": ["Nico Muy", "Gabe Muy", "Aiden Muy", "Dylan Pastorin"],
+        "likely_conflicts": ["Aiden Muy"]
     }
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
@@ -153,53 +189,6 @@ async def generate_ai_text(messages, temperature=0.9):
     logger.error("AI request failed after 3 attempts.")
     return None
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=45)
-            ) as response:
-                if response.status != 200:
-                    logger.error(f"AI request failed with status {response.status}: {await response.text()}")
-                    return None
-                data = await response.json()
-                return data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-    except aiohttp.ClientError as e:
-        logger.error(f"AI request failed: {type(e).__name__} - {e}")
-    except asyncio.TimeoutError:
-        logger.error("AI request timed out.")
-    except Exception as e:
-        logger.error(f"Unexpected error during AI request: {type(e).__name__} - {e}")
-    return None
-
-    payload = {
-        "model": MODEL,
-        "messages": messages,
-        "temperature": temperature
-    }
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=45)
-            ) as response:
-                data = await response.json()
-                return data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-    except Exception as e:
-        logger.error(f"AI request failed: {e}")
-        return None
-
 async def generate_unique_setting():
     prompt = (
         "🎬 Generate a unique setting for a zombie survival story. "
@@ -226,13 +215,21 @@ def build_scene_prompt():
         f"🧠 Setting: {g.story_seed}\n"
         f"🧍 Alive characters: {', '.join(g.alive)}\n"
         f"🧠 Traits:\n{traits}\n\n"
-        "🎬 Write a vivid zombie survival scene. Describe what each character is doing. "
-        "Use bullet points and paragraph breaks. Do not introduce a new threat yet."
+        "🎬 Write a vivid zombie survival scene. Include every character. "
+        "Keep each line concise to fit Discord limits. Use bullet points and paragraph breaks."
+    )
+
+def build_health_prompt():
+    g = active_game
+    return (
+        f"🧍 Alive characters: {', '.join(g.alive)}\n\n"
+        "🧠 Describe each character's physical condition (healthy, sick, injured, etc.) in one sentence each. "
+        "Then summarize the group's emotional state, trust level, and any rising bonds or conflicts."
     )
 
 def build_dilemma_prompt():
     return (
-        "🧠 Based on the scene above, describe the new problem that arises. "
+        "🧠 Based on the scene and health report above, describe the new problem that arises. "
         "Limit the dilemma to 2 sentences. Do not include any choices yet."
     )
 
@@ -246,6 +243,13 @@ async def generate_scene():
     messages = [
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
         {"role": "user", "content": build_scene_prompt()}
+    ]
+    return await generate_ai_text(messages)
+
+async def generate_health_report():
+    messages = [
+        {"role": "system", "content": "You are a horror narrator tracking character wellbeing and group dynamics."},
+        {"role": "user", "content": build_health_prompt()}
     ]
     return await generate_ai_text(messages)
 
@@ -386,11 +390,19 @@ class ZombieGame(commands.Cog):
         if g.terminated or not scene_text:
             await channel.send("🛑 Game terminated or scene generation failed.")
             return
-
         await stream_text(loading_msg, f"🎭 **Scene**\n{scene_text}", delay=0.8)
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
 
-        # Phase 2: Dilemma generation
+        # Phase 2: Health report
+        health_msg = await channel.send("🩺 Assessing group health and relationships...")
+        health_text = await generate_health_report()
+        if g.terminated or not health_text:
+            await channel.send("🛑 Game terminated or health report failed.")
+            return
+        await stream_text(health_msg, f"🩺 **Health & Relationships**\n{health_text}", delay=0.6)
+        await asyncio.sleep(5)
+
+        # Phase 3: Dilemma generation
         dilemma_msg = await channel.send("🧠 Generating dilemma...")
         dilemma_text = await generate_dilemma()
         if g.terminated or not dilemma_text:
@@ -399,7 +411,7 @@ class ZombieGame(commands.Cog):
         await dilemma_msg.edit(content=f"🧠 **Dilemma**\n{dilemma_text}")
         await asyncio.sleep(2)
 
-        # Phase 3: Choice generation
+        # Phase 4: Choice generation
         choices_text = await generate_choices()
         if g.terminated or not choices_text:
             await channel.send("🛑 Game terminated or choice generation failed.")
@@ -414,6 +426,7 @@ class ZombieGame(commands.Cog):
         choices_msg = await channel.send("🔀 **Choices**\n" + "\n".join(g.options))
         await choices_msg.add_reaction("1️⃣")
         await choices_msg.add_reaction("2️⃣")
+        await asyncio.sleep(10)
 
         countdown_msg = await channel.send("⏳ Voting ends in...")
         await countdown_message(countdown_msg, 15, "⏳ Voting ends in...")
@@ -433,22 +446,44 @@ class ZombieGame(commands.Cog):
         choice = g.options[0] if votes["1️⃣"] >= votes["2️⃣"] else g.options[1]
         g.last_choice = choice
 
+        # Phase 5: Outcome narration
+        outcome_prompt = (
+            f"The group chose: {choice}\n"
+            f"Alive characters: {', '.join(g.alive)}\n"
+            "🧠 Describe how this choice led to either group benefits or character deaths. "
+            "Be vivid but concise. Then list the deaths and survivors in bullet format."
+        )
+        messages = [
+            {"role": "system", "content": "You are a horror narrator describing consequences of group decisions."},
+            {"role": "user", "content": outcome_prompt}
+        ]
+        outcome_text = await generate_ai_text(messages, temperature=0.8)
+        if not outcome_text:
+            outcome_text = "⚠️ Outcome generation failed. Proceeding with random deaths."
+
         deaths = random.sample(g.alive, k=random.randint(0, min(4, len(g.alive))))
         for name in deaths:
             g.alive.remove(name)
             g.dead.insert(0, name)
 
-        g.last_events = f"🧾 Outcome: The group chose: **{choice}**.\n💀 Deaths: {', '.join(deaths) if deaths else 'None'}."
+        survivors = g.alive.copy()
+        death_lines = "\n".join([f"• {name}" for name in deaths]) or "• None"
+        survivor_lines = "\n".join([f"• {name}" for name in survivors]) or "• None"
 
+        g.last_events = (
+            f"🧾 **Outcome**\n{outcome_text}\n\n"
+            f"💀 **Deaths This Round**\n{death_lines}\n\n"
+            f"🧍 **Remaining Survivors**\n{survivor_lines}"
+        )
         await channel.send(g.last_events)
         update_stats(g)
-        await asyncio.sleep(3)
+        await asyncio.sleep(10)
 
         if len(g.alive) <= random.randint(1, 5):
             if len(g.alive) == 1:
                 await channel.send(f"🏆 {g.alive[0]} is the sole survivor!")
             else:
-                await channel.send(f"🏁 Final survivors: {', '.join(g.alive)}")
+                await channel.send(f"🏁 Final survivors:\n" + "\n".join([f"• {name}" for name in g.alive]))
             await self.end_summary(channel)
             end_game()
             return
@@ -474,6 +509,27 @@ class ZombieGame(commands.Cog):
             await channel.send(f"⚔️ Biggest opps: {conflicts[0][0][0]} vs {conflicts[0][0][1]} ({conflicts[0][1]} points)")
 
         await channel.send(f"🕊️ Most dignified: {get_top_stat(g.stats['dignified'])}")
+
+        # Final recap generation
+        recap_prompt = (
+            f"🧠 Final recap request:\n"
+            f"Characters who died: {', '.join(g.dead)}\n"
+            f"Final survivors: {', '.join(g.alive)}\n"
+            f"Key choices made: {g.last_choice}\n"
+            f"Strongest bond: {bonds[0][0][0]} & {bonds[0][0][1]}\n"
+            f"Biggest conflict: {conflicts[0][0][0]} vs {conflicts[0][0][1]}\n\n"
+            "🎬 Write a brief cinematic summary of the entire game. Include how characters died, what relationships changed, and any major emotional or strategic turning points. Keep it under 200 words."
+        )
+        messages = [
+            {"role": "system", "content": "You are a horror narrator summarizing a zombie survival story."},
+            {"role": "user", "content": recap_prompt}
+        ]
+        recap_text = await generate_ai_text(messages, temperature=0.8)
+        if recap_text:
+            await channel.send("🎞️ **Final Recap**\n" + recap_text)
+        else:
+            await channel.send("⚠️ Final recap generation failed.")
+
         await channel.send("🎬 Thanks for surviving (or not) the zombie apocalypse. Until next time...")
 
 # Cog setup
