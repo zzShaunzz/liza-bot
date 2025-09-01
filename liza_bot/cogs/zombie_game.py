@@ -25,15 +25,17 @@ def bold_character_names(text: str) -> str:
         for part in full_name.split():
             name_parts.add(part)
     sorted_names = sorted(name_parts, key=len, reverse=True)
+
     for name in sorted_names:
-        pattern = re.compile(rf"\b{re.escape(name)}\b", re.IGNORECASE)
+        pattern = re.compile(rf"(?<!\*)\b{re.escape(name)}\b(?!\*)", re.IGNORECASE)
         text = pattern.sub(bold_name(name), text)
     return text
 
 def enforce_bullets(text: str) -> str:
-    raw = re.split(r"(?:•|\n|^)\s*", text)
-    lines = [line.strip() for line in raw if line.strip()]
-    return "\n".join([f"• {line}" for line in lines])
+    # Split on bullets or newlines, then reformat cleanly
+    lines = re.split(r"•\s*|\n+", text)
+    cleaned = [line.strip(" *") for line in lines if line.strip()]
+    return "\n".join([f"• {line}" for line in cleaned])
 
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
