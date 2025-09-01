@@ -120,6 +120,39 @@ async def generate_ai_text(messages, temperature=0.9):
         "temperature": temperature
     }
 
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=45)
+                ) as response:
+                    if response.status != 200:
+                        logger.error(f"AI request failed with status {response.status}: {await response.text()}")
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    data = await response.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    if content:
+                        return content
+                    logger.warning("AI response was empty.")
+        except asyncio.TimeoutError:
+            logger.warning(f"AI request timed out on attempt {attempt + 1}")
+        except aiohttp.ClientError as e:
+            logger.error(f"AI request failed: {type(e).__name__} - {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error during AI request: {type(e).__name__} - {e}")
+
+        await asyncio.sleep(2 ** attempt)
+
+    logger.error("AI request failed after 3 attempts.")
+    return None
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -129,7 +162,7 @@ async def generate_ai_text(messages, temperature=0.9):
                     "Content-Type": "application/json"
                 },
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=15)
+                timeout=aiohttp.ClientTimeout(total=45)
             ) as response:
                 if response.status != 200:
                     logger.error(f"AI request failed with status {response.status}: {await response.text()}")
@@ -159,7 +192,7 @@ async def generate_ai_text(messages, temperature=0.9):
                     "Content-Type": "application/json"
                 },
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=15)
+                timeout=aiohttp.ClientTimeout(total=45)
             ) as response:
                 data = await response.json()
                 return data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
