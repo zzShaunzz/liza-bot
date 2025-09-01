@@ -215,8 +215,9 @@ async def generate_intro_scene():
             data = response.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             logger.debug(f"[ZombieGame] 🧠 Raw intro response:\n{content}")
+            logger.debug(f"🧟 Raw intro output (attempt {attempt + 1}):\n{content}")
 
-            if content and len(content.split()) >= 40:
+            if content and len(content.split()) >= 20:
                 logger.info("[ZombieGame] ✅ Intro scene generated.")
                 return content
 
@@ -254,8 +255,9 @@ async def generate_story():
             data = response.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             logger.debug(f"[ZombieGame] 🧠 Raw dilemma response:\n{content}")
+            logger.debug(f"🧟 Raw dilemma output (attempt {attempt + 1}):\n{content}")
 
-            if content and len(content.split()) >= 40:
+            if content and len(content.split()) >= 20:
                 logger.info("[ZombieGame] ✅ Dilemma generated.")
                 return content
 
