@@ -13,10 +13,20 @@ from dotenv import load_dotenv
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# 🔒 Load environment variables
 load_dotenv()
-ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID"))
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL = os.getenv("MODEL", "openrouter/mixtral")
+
+# 🧪 Validate and load critical config
+try:
+    ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID"))
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+    MODEL = os.getenv("MODEL", "openrouter/mixtral")
+
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY is missing.")
+except Exception as e:
+    logger.error(f"❌ Failed to load environment variables: {e}")
+    raise SystemExit(1)
 
 logger.info("🧠 zombie_game.py is executing")
 
