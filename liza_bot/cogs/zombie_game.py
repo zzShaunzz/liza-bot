@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import os, random, json, asyncio, logging, requests
+import os, random, asyncio, logging, requests
 from dotenv import load_dotenv
 
 # 🧠 Logging setup
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL = os.getenv("MODEL", "meta-llama/llama-3-8b-instruct")
+MODEL = os.getenv("MODEL", "openrouter/solar-10.7b-instruct")
 
 if not OPENROUTER_API_KEY:
     logger.error("❌ OPENROUTER_API_KEY is missing.")
@@ -140,7 +140,7 @@ def start_game(user_id: int):
     for name, info in CHARACTER_INFO.items():
         for partner in info.get("likely_pairs", []):
             pair = tuple(sorted((name, partner)))
-            active_game.stats["bonds"][pair] = active_game.stats["bonds"].get(pair, 1) + 2
+            active_game.stats["bonds"][pair] += 2
         for rival in info.get("likely_conflicts", []):
             pair = tuple(sorted((name, rival)))
             active_game.stats["conflicts"][pair] = active_game.stats["conflicts"].get(pair, 0) + 2
@@ -215,11 +215,12 @@ async def generate_intro_scene():
                 }
             )
 
+            logger.debug(f"🧟 Full response JSON:\n{response.text}")
             data = response.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             logger.debug(f"🧟 Raw intro output (attempt {attempt + 1}):\n{content}")
 
-            if content and len(content.split()) >= 40:
+            if content:
                 logger.info("[ZombieGame] ✅ Intro scene generated.")
                 return content
 
@@ -256,11 +257,12 @@ async def generate_story():
                 }
             )
 
+            logger.debug(f"🧟 Full response JSON:\n{response.text}")
             data = response.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             logger.debug(f"🧟 Raw dilemma output (attempt {attempt + 1}):\n{content}")
 
-            if content and len(content.split()) >= 40:
+            if content:
                 logger.info("[ZombieGame] ✅ Dilemma generated.")
                 return content
 
