@@ -169,7 +169,7 @@ def build_intro_context():
     context += (
         "Write a vivid, paragraph-length scene describing what each character is doing at the start of this round. "
         "Include emotional tension, physical actions, and hints of interpersonal dynamics. "
-        "Do not describe any new threat or dilemma yet — just set the scene.\n"
+        "Make it immersive and at least 100 words long. Do not describe any new threat or dilemma yet — just set the scene.\n"
     )
 
     return context
@@ -182,92 +182,91 @@ def build_dilemma_context():
         "Introduce a new threat or challenge that forces the group to make a difficult decision. "
         "Include environmental hazards, emotional stakes, and conflicting goals. "
         "Present two distinct options for how the group might respond. "
-        "Label them clearly as '1.' and '2.' and make both options morally complex.\n"
+        "Label them clearly as '1.' and '2.' and make both options morally complex. "
+        "Make the dilemma vivid and at least 100 words long.\n"
     )
 
     context += f"Alive characters: {', '.join(g.alive)}\n"
 
     return context
 
-async def generate_intro_scene(retry=False):
+async def generate_intro_scene():
     prompt = build_intro_context()
     messages = [
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
         {"role": "user", "content": prompt}
     ]
 
-    try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": MODEL,
-                "messages": messages,
-                "temperature": 0.9
-            }
-        )
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": MODEL,
+                    "messages": messages,
+                    "temperature": 0.9
+                }
+            )
 
-        logger.debug(f"[ZombieGame] 🧠 Intro prompt:\n{prompt}")
-        logger.debug(f"[ZombieGame] 🧠 Raw response:\n{response.text}")
-        data = response.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            data = response.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            logger.debug(f"[ZombieGame] 🧠 Raw intro response:\n{content}")
 
-        if len(content.split()) < 40 and not retry:
-            logger.warning("⚠️ Intro scene too short — retrying once...")
-            return await generate_intro_scene(retry=True)
+            if content and len(content.split()) >= 40:
+                logger.info("[ZombieGame] ✅ Intro scene generated.")
+                return content
 
-        if not content:
-            raise ValueError("Intro scene generation failed after retry.")
+            logger.warning(f"⚠️ Intro scene too short on attempt {attempt + 1}")
+            await asyncio.sleep(2 ** attempt)
 
-        logger.info("[ZombieGame] ✅ Intro scene generated.")
-        return content
+        except Exception as e:
+            logger.error(f"💥 Intro generation error on attempt {attempt + 1}: {e}")
+            await asyncio.sleep(2 ** attempt)
 
-    except Exception as e:
-        logger.error(f"💥 Failed to generate intro scene: {e}")
-        return "The survivors gather in silence, each lost in thought as the night deepens."
+    raise RuntimeError("Intro scene generation failed after 3 attempts.")
 
-async def generate_story(retry=False):
+async def generate_story():
     prompt = build_dilemma_context()
     messages = [
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
         {"role": "user", "content": prompt}
     ]
 
-    try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": MODEL,
-                "messages": messages,
-                "temperature": 0.85
-            }
-        )
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": MODEL,
+                    "messages": messages,
+                    "temperature": 0.85
+                }
+            )
 
-        logger.debug(f"[ZombieGame] 🧠 Dilemma prompt:\n{prompt}")
-        logger.debug(f"[ZombieGame] 🧠 Raw response:\n{response.text}")
-        data = response.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            data = response.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            logger.debug(f"[ZombieGame] 🧠 Raw dilemma response:\n{content}")
 
-        if not content and not retry:
-            logger.warning("⚠️ Dilemma empty — retrying once...")
-            return await generate_story(retry=True)
+            if content and len(content.split()) >= 40:
+                logger.info("[ZombieGame] ✅ Dilemma generated.")
+                return content
 
-        if not content:
-            raise ValueError("Dilemma generation failed after retry.")
+            logger.warning(f"⚠️ Dilemma too short on attempt {attempt + 1}")
+            await asyncio.sleep(2 ** attempt)
 
-        logger.info("[ZombieGame] ✅ Dilemma generated.")
-        return content
+        except Exception as e:
+            logger.error(f"💥 Dilemma generation error on attempt {attempt + 1}: {e}")
+            await asyncio.sleep(2 ** attempt)
 
-    except Exception as e:
-        logger.error(f"💥 Failed to generate dilemma: {e}")
-        return "The group faces a mysterious threat, but the details are unclear."
+    raise RuntimeError("Dilemma generation failed after 3 attempts.")
 
 def extract_options(text: str):
     lines = text.split("\n")
@@ -313,11 +312,23 @@ async def countdown_message(message: discord.Message, seconds: int, prefix: str 
             logger.warning(f"⚠️ Countdown edit failed: {e}")
             break
 
+async def stream_text(message: discord.Message, full_text: str, chunk_size: int = 6, delay: float = 0.5):
+    words = full_text.split()
+    chunks = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
+    output = ""
+    for chunk in chunks:
+        output += chunk + " "
+        try:
+            await message.edit(content=output.strip())
+            await asyncio.sleep(delay)
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to stream text: {e}")
+            break
+
 class ZombieGame(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    # Legacy command to start the game
     @commands.command(name="lizazombie")
     async def lizazombie_legacy(self, ctx: commands.Context):
         if is_active():
@@ -326,9 +337,9 @@ class ZombieGame(commands.Cog):
         start_game(ctx.author.id)
         msg = await ctx.send("🧟‍♀️ Zombie survival game starting in...")
         await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
+        await msg.edit(content="🧟‍♀️ Game started!")
         await self.run_round(ctx.channel)
 
-    # Slash command to start the game
     @app_commands.command(name="lizazombie", description="Start a zombie survival game")
     async def lizazombie_slash(self, interaction: discord.Interaction):
         if interaction.channel.id != ZOMBIE_CHANNEL_ID:
@@ -340,9 +351,9 @@ class ZombieGame(commands.Cog):
         start_game(interaction.user.id)
         msg = await interaction.channel.send("🧟‍♀️ Zombie survival game starting in...")
         await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
+        await msg.edit(content="🧟‍♀️ Game started!")
         await self.run_round(interaction.channel)
 
-    # Legacy command to end the game
     @commands.command(name="endgame")
     async def endgame_legacy(self, ctx: commands.Context):
         if not is_active():
@@ -351,7 +362,6 @@ class ZombieGame(commands.Cog):
         end_game()
         await ctx.send("🧟‍♀️ Zombie game manually ended.")
 
-    # Slash command to end the game
     @app_commands.command(name="endgame", description="Manually end the current zombie game")
     async def endgame_slash(self, interaction: discord.Interaction):
         if not is_active():
@@ -360,7 +370,6 @@ class ZombieGame(commands.Cog):
         end_game()
         await interaction.response.send_message("🧟‍♀️ Zombie game manually ended.")
 
-    # Debug command to test intro generation
     @commands.command(name="testintro")
     async def test_intro(self, ctx: commands.Context):
         prompt = build_intro_context()
@@ -368,7 +377,6 @@ class ZombieGame(commands.Cog):
         response = await generate_intro_scene()
         await ctx.send(f"🧠 Response:\n{response}")
 
-    # Debug command to test dilemma generation
     @commands.command(name="testdilemma")
     async def test_dilemma(self, ctx: commands.Context):
         prompt = build_dilemma_context()
@@ -381,16 +389,17 @@ class ZombieGame(commands.Cog):
         g.round += 1
 
         # Phase 1: Intro scene
-        count_msg = await channel.send("🎭 Scene begins in...")
-        await countdown_message(count_msg, 5, "🎭 Scene begins in...")
-        intro = await generate_intro_scene()
-        await count_msg.edit(content=f"🎭 **Scene**\n{intro}")
+        intro_text = await generate_intro_scene()
+        intro_msg = await channel.send("🎭 Loading scene...")
+        await stream_text(intro_msg, f"🎭 **Scene**\n{intro_text}", chunk_size=6, delay=0.6)
         await asyncio.sleep(15)
 
         # Phase 2: Dilemma
-        dilemma = await generate_story()
-        g.options = extract_options(dilemma)
-        dilemma_msg = await channel.send(f"🧠 **Dilemma**\n{dilemma}")
+        dilemma_text = await generate_story()
+        g.options = extract_options(dilemma_text)
+        dilemma_msg = await channel.send("🧠 Loading dilemma...")
+        await stream_text(dilemma_msg, f"🧠 **Dilemma**\n{dilemma_text}", chunk_size=6, delay=0.6)
+
         vote_msg = await channel.send("Vote now! ⏳\nReact with 1️⃣ or 2️⃣")
         await vote_msg.add_reaction("1️⃣")
         await vote_msg.add_reaction("2️⃣")
