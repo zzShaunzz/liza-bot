@@ -107,70 +107,20 @@ CHARACTER_INFO = {
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
 
-class GameState:
-    def __init__(self, initiator: int):
-        self.initiator = initiator
-        self.round = 0
-        self.alive = CHARACTERS.copy()
-        self.dead = []
-        self.last_choice = None
-        self.last_events = ""
-        self.options = []
-        self.votes = {}
-        self.stats = {
-            "helpful": {name: 0 for name in CHARACTERS},
-            "sinister": {name: 0 for name in CHARACTERS},
-            "resourceful": {name: 0 for name in CHARACTERS},
-            "bonds": {},
-            "conflicts": {},
-            "dignified": {name: 100 for name in CHARACTERS}
-        }
-
-active_game = None
-
-def start_game(user_id: int):
-    global active_game
-    active_game = GameState(user_id)
-
-    for i in range(len(CHARACTERS)):
-        for j in range(i + 1, len(CHARACTERS)):
-            pair = tuple(sorted((CHARACTERS[i], CHARACTERS[j])))
-            active_game.stats["bonds"][pair] = 1
-
-    for name, info in CHARACTER_INFO.items():
-        for partner in info.get("likely_pairs", []):
-            pair = tuple(sorted((name, partner)))
-            active_game.stats["bonds"][pair] = active_game.stats["bonds"].get(pair, 1) + 2
-        for rival in info.get("likely_conflicts", []):
-            pair = tuple(sorted((name, rival)))
-            active_game.stats["conflicts"][pair] = active_game.stats["conflicts"].get(pair, 0) + 2
-
-def end_game():
-    global active_game
-    active_game = None
-
-def is_active():
-    return active_game is not None
-
-def build_intro_context():
+def build_dilemma_context():
     g = active_game
-    context = f"Round {g.round}\n"
+    context = f"Round {g.round} dilemma:\n"
 
-    if g.round > 1:
-        context += f"Last round recap: {g.last_events}\n"
+    context += (
+        "Introduce a new threat or challenge that forces the group to make a difficult decision. "
+        "Include environmental hazards, emotional stakes, and conflicting goals. "
+        "Present two distinct options for how the group might respond. "
+        "Label them clearly as '1.' and '2.' and make both options morally complex.\n"
+    )
 
     context += f"Alive characters: {', '.join(g.alive)}\n"
 
-    traits_summary = "\n".join(
-        [f"{name}: {', '.join(CHARACTER_INFO[name]['traits'])}" for name in g.alive]
-    )
-    context += f"\nCharacter traits:\n{traits_summary}\n"
-
-    context += (
-        "Write a vivid scene describing what each character is doing at the start of this round. "
-        "Include emotional tension, physical actions, and hints of interpersonal dynamics. "
-        "Do not describe any new threat or dilemma yet — just set the scene.\n"
-    )
+    return context
 
 async def generate_intro_scene(retry=False):
     prompt = build_intro_context()
@@ -203,8 +153,7 @@ async def generate_intro_scene(retry=False):
             return await generate_intro_scene(retry=True)
 
         if not content:
-            logger.warning("⚠️ Fallback triggered. Intro scene was empty after retry.")
-            return "The survivors gather in silence, each lost in thought as the night deepens."
+            raise ValueError("Intro scene generation failed after retry.")
 
         logger.info("[ZombieGame] ✅ Intro scene generated.")
         return content
@@ -244,8 +193,7 @@ async def generate_story(retry=False):
             return await generate_story(retry=True)
 
         if not content:
-            logger.warning("⚠️ Fallback triggered. Dilemma was empty after retry.")
-            return "The group faces a mysterious threat, but the details are unclear."
+            raise ValueError("Dilemma generation failed after retry.")
 
         logger.info("[ZombieGame] ✅ Dilemma generated.")
         return content
@@ -294,7 +242,7 @@ class ZombieGame(commands.Cog):
         self.bot = bot
 
     @commands.command(name="lizazombie")
-    async def lizazombie(self, ctx: commands.Context):
+    async def lizazombie_legacy(self, ctx: commands.Context):
         if is_active():
             await ctx.send("⚠️ A zombie game is already running.")
             return
@@ -302,6 +250,19 @@ class ZombieGame(commands.Cog):
         await ctx.send("🧟‍♀️ Zombie survival game started! Round 1 begins in 3 seconds...")
         await asyncio.sleep(3)
         await self.run_round(ctx.channel)
+
+    @app_commands.command(name="lizazombie", description="Start a zombie survival game")
+    async def lizazombie_slash(self, interaction: discord.Interaction):
+        if interaction.channel.id != ZOMBIE_CHANNEL_ID:
+            await interaction.response.send_message("❌ Run this command in the zombie channel.", ephemeral=True)
+            return
+        if is_active():
+            await interaction.response.send_message("⚠️ A zombie game is already running.", ephemeral=True)
+            return
+        start_game(interaction.user.id)
+        await interaction.response.send_message("🧟‍♀️ Zombie survival game started! Round 1 begins in 3 seconds...")
+        await asyncio.sleep(3)
+        await self.run_round(interaction.channel)
 
     @commands.command(name="testintro")
     async def test_intro(self, ctx: commands.Context):
@@ -393,5 +354,7 @@ class ZombieGame(commands.Cog):
 
 # 🔧 Cog setup
 async def setup(bot: commands.Bot):
-    await bot.add_cog(ZombieGame(bot))
+    cog = ZombieGame(bot)
+    await bot.add_cog(cog)
+    bot.tree.add_command(cog.lizazombie_slash)
     print("✅ ZombieGame cog loaded")
