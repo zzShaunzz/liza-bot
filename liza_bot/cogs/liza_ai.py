@@ -8,7 +8,7 @@ load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 BOT_CHANNEL_ID = 1271294510164607008
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL_NAME = "cognitivecomputations/dolphin3.0-mistral-24b:free"
+MODEL_NAME = "google/gemini-2.5-flash-image-preview:free"
 
 class LizaAI(commands.Cog):
     def __init__(self, bot):
