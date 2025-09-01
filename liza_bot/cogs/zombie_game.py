@@ -260,7 +260,6 @@ async def generate_story():
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             logger.debug(f"🧟 Raw dilemma output (attempt {attempt + 1}):\n{content}")
 
-            return content
                 logger.info("[ZombieGame] ✅ Dilemma generated.")
                 return content
 
