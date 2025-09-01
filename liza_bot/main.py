@@ -175,6 +175,28 @@ async def cleardupe_slash(interaction: discord.Interaction):
         await trouble.send(f"💥 Error in slash command: `{e}`")
         await interaction.followup.send("⚠️ Something went wrong during processing.")
 
+@bot.command(name="debug")
+async def debug_status(ctx):
+    embed = discord.Embed(title="🧠 Bot Debug Status", color=0x00FFAA)
+    embed.add_field(name="Bot User", value=str(bot.user), inline=False)
+    embed.add_field(name="Guild", value=ctx.guild.name if ctx.guild else "DM", inline=False)
+    embed.add_field(name="Channel", value=ctx.channel.name, inline=False)
+
+    # Environment checks
+    zombie_channel_id = os.getenv("ZOMBIE_CHANNEL_ID")
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    model_name = os.getenv("MODEL", "openrouter/mixtral")
+
+    embed.add_field(name="ZOMBIE_CHANNEL_ID", value=zombie_channel_id or "❌ Not set", inline=False)
+    embed.add_field(name="OPENROUTER_API_KEY", value="✅ Loaded" if openrouter_key else "❌ Missing", inline=False)
+    embed.add_field(name="MODEL", value=model_name, inline=False)
+
+    # Cog check
+    zombie_cog = "✅" if "ZombieGame" in bot.cogs else "❌ Not loaded"
+    embed.add_field(name="ZombieGame Cog", value=zombie_cog, inline=False)
+
+    await ctx.send(embed=embed)
+
 @bot.event
 async def on_raw_reaction_add(payload):
     emoji = str(payload.emoji)
