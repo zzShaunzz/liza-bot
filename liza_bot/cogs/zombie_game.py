@@ -8,10 +8,92 @@ ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID"))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL = os.getenv("MODEL", "openrouter/mixtral")
 
-CHARACTERS = [
-    "Shaun Sadsarin", "Addison Sadsarin", "Kate Nainggolan", "Jill Nainggolan", "Noah Nainggolan",
-    "Dylan Pastorin", "Gabe Muy", "Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy", "Jordan"
-]
+CHARACTER_INFO = {
+    "Shaun Sadsarin": {
+        "age": 15, "gender": "Male",
+        "traits": ["organizer", "strong", "fast", "heat-sensitive", "pattern-adapter"],
+        "siblings": ["Addison Sadsarin"],
+        "likely_pairs": ["Addison Sadsarin", "Aiden Muy", "Gabe Muy", "Dylan Pastorin"],
+        "likely_conflicts": ["Jordan"]
+    },
+    "Addison Sadsarin": {
+        "age": 16, "gender": "Female",
+        "traits": ["kind", "patient", "versatile", "physically weak", "slow decision-maker"],
+        "siblings": ["Shaun Sadsarin"],
+        "likely_pairs": ["Shaun Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
+        "likely_conflicts": ["Dylan Pastorin"]
+    },
+    "Dylan Pastorin": {
+        "age": 21, "gender": "Male",
+        "traits": ["mentally brave", "protective", "strong with tools", "slow mover", "manipulation-prone", "extroverted"],
+        "siblings": [],
+        "likely_pairs": ["Noah Nainggolan", "Gabe Muy", "Shaun Sadsarin", "Vivian Muy"],
+        "likely_conflicts": ["Kate Nainggolan"]
+    },
+    "Noah Nainggolan": {
+        "age": 18, "gender": "Male",
+        "traits": ["physically capable", "fighter", "not a planner"],
+        "siblings": [],
+        "likely_pairs": ["Gabe Muy", "Jill Nainggolan", "Kate Nainggolan", "Dylan Pastorin"],
+        "likely_conflicts": ["Jill Nainggolan"]
+    },
+    "Jill Nainggolan": {
+        "age": 16, "gender": "Female",
+        "traits": ["conniving", "lucky", "swimmer"],
+        "siblings": ["Kate Nainggolan", "Nico Muy"],
+        "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
+        "likely_conflicts": ["Aiden Muy"]
+    },
+    "Kate Nainggolan": {
+        "age": 14, "gender": "Female",
+        "traits": ["manipulative", "quick-witted", "enduring", "persuasive"],
+        "siblings": ["Jill Nainggolan", "Nico Muy"],
+        "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
+        "likely_conflicts": ["Nico Muy"]
+    },
+    "Vivian Muy": {
+        "age": 18, "gender": "Female",
+        "traits": ["wise", "calm", "insightful", "secret genius"],
+        "siblings": ["Gabe Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Dylan Pastorin", "Ella Muy", "Aiden Muy", "Addison Sadsarin"],
+        "likely_conflicts": ["Gabe Muy"]
+    },
+    "Gabe Muy": {
+        "age": 17, "gender": "Male",
+        "traits": ["strong", "peacekeeper", "withdraws under pressure", "hand-to-hand expert"],
+        "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
+        "likely_conflicts": ["Shaun Sadsarin"]
+    },
+    "Aiden Muy": {
+        "age": 14, "gender": "Male",
+        "traits": ["agile", "crafty", "chef", "mental reader"],
+        "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
+        "likely_conflicts": ["Addison Sadsarin"]
+    },
+    "Ella Muy": {
+        "age": 11, "gender": "Female",
+        "traits": ["physically reliant", "luckiest"],
+        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"],
+        "likely_pairs": ["Addison Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
+        "likely_conflicts": ["Nico Muy"]
+    },
+    "Nico Muy": {
+        "age": 12, "gender": "Male",
+        "traits": ["daring", "comical", "risk-taker", "needs guidance"],
+        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy", "Jill Nainggolan", "Kate Nainggolan"],
+        "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
+        "likely_conflicts": ["Ella Muy"]
+    },
+    "Jordan": {
+        "age": 13, "gender": "Male",
+        "traits": ["gentle", "quietly skilled", "stronger than he seems"],
+        "siblings": [],
+        "likely_pairs": ["Nico Muy", "Gabe Muy", "Aiden Muy", "Dylan Pastorin"],
+        "likely_conflicts": ["Noah Nainggolan"]
+    }
+}
 
 class GameState:
     def __init__(self, initiator):
@@ -38,6 +120,20 @@ def start_game(user_id):
     global active_game
     active_game = GameState(user_id)
 
+    for i in range(len(CHARACTERS)):
+        for j in range(i + 1, len(CHARACTERS)):
+            pair = tuple(sorted((CHARACTERS[i], CHARACTERS[j])))
+            active_game.stats["bonds"][pair] = 1
+
+    for name, info in CHARACTER_INFO.items():
+        for partner in info.get("likely_pairs", []):
+            pair = tuple(sorted((name, partner)))
+            active_game.stats["bonds"][pair] = active_game.stats["bonds"].get(pair, 1) + 2
+
+        for rival in info.get("likely_conflicts", []):
+            pair = tuple(sorted((name, rival)))
+            active_game.stats["conflicts"][pair] = active_game.stats["conflicts"].get(pair, 0) + 2
+
 def end_game():
     global active_game
     active_game = None
@@ -51,6 +147,8 @@ def build_prompt():
     if g.round > 1:
         prompt += f"Last round recap: {g.last_events}\n"
     prompt += f"Alive characters: {', '.join(g.alive)}\n"
+    traits_summary = "\n".join([f"{name}: {', '.join(CHARACTER_INFO[name]['traits'])}" for name in g.alive])
+    prompt += f"\nCharacter traits:\n{traits_summary}\n"
     prompt += "Describe a new zombie-related problem the group faces. Include character insights, emerging tensions, and two options to vote on.\n"
     return prompt
 
@@ -112,26 +210,39 @@ class ZombieGame(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="lizazombie", description="Start the zombie survival RPG with Liza")
-    async def lizazombie_slash(self, interaction: discord.Interaction):
-        if interaction.channel.id != ZOMBIE_CHANNEL_ID:
-            await interaction.response.send_message("❌ This command can only be run in the designated game channel.", ephemeral=True)
+    async def start_game_flow(self, channel, user_id):
+        if channel.id != ZOMBIE_CHANNEL_ID:
+            await channel.send("❌ This command can only be run in the designated game channel.")
             return
         if is_active():
-            await interaction.response.send_message("Game is currently in process.", ephemeral=True)
+            await channel.send("Game is currently in process.")
             return
-        start_game(interaction.user.id)
-        await interaction.response.send_message("🧟‍♀️ Zombie survival game started! Round 1 begins in 5 seconds...")
+        start_game(user_id)
+        await channel.send("🧟‍♀️ Zombie survival game started! Round 1 begins in 5 seconds...")
         await asyncio.sleep(5)
-        await self.run_round(interaction.channel)
+        await self.run_round(channel)
+
+    @app_commands.command(name="lizazombie", description="Start the zombie survival RPG with Liza")
+    async def lizazombie_slash(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        await self.start_game_flow(interaction.channel, interaction.user.id)
+
+    @commands.command(name="lizazombie")
+    async def lizazombie_prefix(self, ctx: commands.Context):
+        await self.start_game_flow(ctx.channel, ctx.author.id)
 
     async def run_round(self, channel):
         g = active_game
         g.round += 1
 
-        story = await generate_story()
-        g.options = extract_options(story)
+        try:
+            story = await generate_story()
+        except Exception as e:
+            await channel.send(f"Error generating story: {e}")
+            end_game()
+            return
 
+        g.options = extract_options(story)
         await channel.send(f"**Round {g.round}**\n{story}")
         vote_msg = await channel.send("Vote now! ⏳ 30 seconds...\nReact with 1️⃣ or 2️⃣")
         await vote_msg.add_reaction("1️⃣")
@@ -160,7 +271,6 @@ class ZombieGame(commands.Cog):
         if deaths:
             await channel.send(f"💀 The following characters died: {', '.join(deaths)}")
 
-        # 🎯 Dynamic end threshold
         if len(g.alive) <= random.randint(1, 5):
             if len(g.alive) == 1:
                 await channel.send(f"🏆 {g.alive[0]} is the sole survivor!")
