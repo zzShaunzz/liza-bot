@@ -298,6 +298,17 @@ async def chunk_and_stream(channel: discord.TextChannel, full_text: str, delay: 
         msg = await channel.send("...")
         await stream_text_wordwise(msg, chunk, delay=delay)
 
+async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
+    for i in range(seconds, 0, -1):
+        if active_game and active_game.terminated:
+            return
+        try:
+            await message.edit(content=f"{prefix} {i}")
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.warning(f"Countdown failed: {e}")
+            break
+
 class ZombieGame(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
