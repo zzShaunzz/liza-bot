@@ -343,11 +343,10 @@ class ZombieGame(commands.Cog):
             await ctx.send(f"💥 Error during game flow: `{e}`")
 
     @commands.command(name="testintro")
-    async def test_intro(self, ctx: commands.Context):
-        prompt = build_intro_context()
-        await ctx.send(f"🧪 Prompt:\n```{prompt}```")
-        response = await generate_intro_scene()
-        await ctx.send(f"🧠 Response:\n{response}")
+async def test_intro(self, ctx: commands.Context):
+    prompt = build_intro_context()
+    response = await generate_intro_scene()
+    await ctx.send(f"🧪 Prompt:\n```{prompt}```\n🧠 Response:\n{response}")
 
 async def run_round(self, channel: discord.TextChannel):
     g = active_game
