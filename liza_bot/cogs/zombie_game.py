@@ -194,12 +194,12 @@ async def generate_intro_scene():
             }
         )
 
-        logger.debug(f"[ZombieGame] 🧠 Raw intro response: {response.text}")
+        logger.debug(f"[ZombieGame] 🧠 Intro prompt:\n{build_intro_context()}")
         data = response.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
         if not content:
-            logger.warning("⚠️ AI intro scene was empty.")
+            logger.warning("⚠️ Fallback triggered. Intro scene was empty.")
             return "The survivors gather in silence, each lost in thought as the night deepens."
 
         logger.info("[ZombieGame] ✅ Intro scene generated.")
@@ -251,12 +251,12 @@ async def generate_story():
             }
         )
 
-        logger.debug(f"[ZombieGame] 🧠 Raw dilemma response: {response.text}")
+        logger.debug(f"[ZombieGame] 🧠 Dilemma prompt:\n{build_dilemma_context()}")
         data = response.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
         if not content:
-            logger.warning("⚠️ AI dilemma response was empty.")
+            logger.warning("⚠️ Fallback triggered. Dilemma was empty.")
             return "The group faces a mysterious threat, but the details are unclear."
 
         logger.info("[ZombieGame] ✅ Dilemma generated.")
@@ -332,58 +332,69 @@ class ZombieGame(commands.Cog):
         except Exception as e:
             await ctx.send(f"💥 Error during game flow: `{e}`")
 
-    async def run_round(self, channel: discord.TextChannel):
-        g = active_game
-        g.round += 1
+    @commands.command(name="testintro")
+    async def test_intro(self, ctx: commands.Context):
+        prompt = build_intro_context()
+        await ctx.send(f"🧪 Prompt:\n```{prompt}```")
+        response = await generate_intro_scene()
+        await ctx.send(f"🧠 Response:\n{response}")
 
-        # Phase 1: AI-generated intro scene
-        intro = await generate_intro_scene()
-        await channel.send(f"🎭 **Scene**\n{intro}")
-        await asyncio.sleep(15)
+async def run_round(self, channel: discord.TextChannel):
+    g = active_game
+    g.round += 1
 
-        # Phase 2: AI-generated dilemma
-        dilemma = await generate_story()
-        g.options = extract_options(dilemma)
-        await channel.send(f"🧠 **Dilemma**\n{dilemma}")
+    # Phase 1: AI-generated intro scene
+    logger.debug("[ZombieGame] 🧠 Generating intro scene...")
+    intro = await generate_intro_scene()
+    logger.debug(f"[ZombieGame] Intro scene content:\n{intro}")
+    await channel.send(f"🎭 **Scene**\n{intro}")
+    await asyncio.sleep(15)
 
-        vote_msg = await channel.send("Vote now! ⏳ 15 seconds...\nReact with 1️⃣ or 2️⃣")
-        await vote_msg.add_reaction("1️⃣")
-        await vote_msg.add_reaction("2️⃣")
-        await asyncio.sleep(15)
+    # Phase 2: AI-generated dilemma
+    logger.debug("[ZombieGame] 🧠 Generating dilemma...")
+    dilemma = await generate_story()
+    logger.debug(f"[ZombieGame] Dilemma content:\n{dilemma}")
+    g.options = extract_options(dilemma)
+    await channel.send(f"🧠 **Dilemma**\n{dilemma}")
 
-        vote_msg = await channel.fetch_message(vote_msg.id)
-        votes = await tally_votes(vote_msg)
+    vote_msg = await channel.send("Vote now! ⏳ 15 seconds...\nReact with 1️⃣ or 2️⃣")
+    await vote_msg.add_reaction("1️⃣")
+    await vote_msg.add_reaction("2️⃣")
+    await asyncio.sleep(15)
 
-        if votes["1️⃣"] == 0 and votes["2️⃣"] == 0:
-            await channel.send("No votes cast. Game over.")
-            end_game()
-            return
+    vote_msg = await channel.fetch_message(vote_msg.id)
+    votes = await tally_votes(vote_msg)
 
-        choice = g.options[0] if votes["1️⃣"] >= votes["2️⃣"] else g.options[1]
-        g.last_choice = choice
-        g.last_events = f"The group chose: {choice}"
+    if votes["1️⃣"] == 0 and votes["2️⃣"] == 0:
+        await channel.send("No votes cast. Game over.")
+        end_game()
+        return
 
-        await channel.send(f"Majority chose: **{choice}**")
-        update_stats(g)
-        await asyncio.sleep(3)
+    choice = g.options[0] if votes["1️⃣"] >= votes["2️⃣"] else g.options[1]
+    g.last_choice = choice
+    g.last_events = f"The group chose: {choice}"
 
-        deaths = random.sample(g.alive, k=random.randint(0, min(4, len(g.alive))))
-        for name in deaths:
-            g.alive.remove(name)
-            g.dead.insert(0, name)
-        if deaths:
-            await channel.send(f"💀 The following characters died: {', '.join(deaths)}")
+    await channel.send(f"Majority chose: **{choice}**")
+    update_stats(g)
+    await asyncio.sleep(3)
 
-        if len(g.alive) <= random.randint(1, 5):
-            if len(g.alive) == 1:
-                await channel.send(f"🏆 {g.alive[0]} is the sole survivor!")
-            else:
-                await channel.send(f"🏁 Final survivors: {', '.join(g.alive)}")
-            await self.end_summary(channel)
-            end_game()
-            return
+    deaths = random.sample(g.alive, k=random.randint(0, min(4, len(g.alive))))
+    for name in deaths:
+        g.alive.remove(name)
+        g.dead.insert(0, name)
+    if deaths:
+        await channel.send(f"💀 The following characters died: {', '.join(deaths)}")
 
-        await self.run_round(channel)
+    if len(g.alive) <= random.randint(1, 5):
+        if len(g.alive) == 1:
+            await channel.send(f"🏆 {g.alive[0]} is the sole survivor!")
+        else:
+            await channel.send(f"🏁 Final survivors: {', '.join(g.alive)}")
+        await self.end_summary(channel)
+        end_game()
+        return
+
+    await self.run_round(channel)
 
     async def end_summary(self, channel: discord.TextChannel):
         g = active_game
