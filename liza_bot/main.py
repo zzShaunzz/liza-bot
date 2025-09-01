@@ -275,9 +275,9 @@ async def load_cogs():
     for cog in cogs_to_load:
         try:
             await bot.load_extension(cog)
-            logger.info(f"✅ Loaded {cog}")
+            print(f"✅ Loaded {cog}")
         except Exception:
-            logger.error(f"❌ Failed to load {cog}:\n{traceback.format_exc()}")
+            print(f"❌ Failed to load {cog}:\n{traceback.format_exc()}")
 
 # 🚀 Startup Sequence
 async def startup():
@@ -286,11 +286,11 @@ async def startup():
 
     try:
         synced = await bot.tree.sync()
-        logger.info(f"🌐 Synced {len(synced)} slash commands.")
+        print(f"🌐 Synced {len(synced)} slash commands.")
     except Exception as e:
-        logger.warning(f"⚠️ Failed to sync slash commands: {e}")
+        print(f"⚠️ Failed to sync slash commands: {e}")
 
-    logger.info(f"👋 Logged in as {bot.user.name}")
+    print("🚀 Starting bot...")
     await bot.start(TOKEN)
 
 # 🏁 Launch Bot
