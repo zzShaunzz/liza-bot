@@ -1,35 +1,22 @@
-import json
 import discord
-import asyncio
-import os
-import requests
-import random
-import logging
-
 from discord.ext import commands
 from discord import app_commands
+import os, random, json, asyncio, logging, requests
 from dotenv import load_dotenv
 
-# 🧠 Logging setup for Northflank visibility
+# 🧠 Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # 🔒 Load environment variables
 load_dotenv()
+ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+MODEL = os.getenv("MODEL", "openrouter/mixtral")
 
-# 🧪 Validate and load critical config
-try:
-    ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID"))
-    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-    MODEL = os.getenv("MODEL", "openrouter/mixtral")
-
-    if not OPENROUTER_API_KEY:
-        raise ValueError("OPENROUTER_API_KEY is missing.")
-except Exception as e:
-    logger.error(f"❌ Failed to load environment variables: {e}")
+if not OPENROUTER_API_KEY:
+    logger.error("❌ OPENROUTER_API_KEY is missing.")
     raise SystemExit(1)
-
-logger.info("🧠 zombie_game.py is executing")
 
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
@@ -115,12 +102,13 @@ CHARACTER_INFO = {
         "siblings": [],
         "likely_pairs": ["Nico Muy", "Gabe Muy", "Aiden Muy", "Dylan Pastorin"],
         "likely_conflicts": ["Noah Nainggolan"]
-    }
+    },
+    # 🔁 Add all other characters here as needed
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
 
 class GameState:
-    def __init__(self, initiator):
+    def __init__(self, initiator: int):
         self.initiator = initiator
         self.round = 0
         self.alive = CHARACTERS.copy()
@@ -140,7 +128,7 @@ class GameState:
 
 active_game = None
 
-def start_game(user_id):
+def start_game(user_id: int):
     global active_game
     active_game = GameState(user_id)
 
@@ -153,7 +141,6 @@ def start_game(user_id):
         for partner in info.get("likely_pairs", []):
             pair = tuple(sorted((name, partner)))
             active_game.stats["bonds"][pair] = active_game.stats["bonds"].get(pair, 1) + 2
-
         for rival in info.get("likely_conflicts", []):
             pair = tuple(sorted((name, rival)))
             active_game.stats["conflicts"][pair] = active_game.stats["conflicts"].get(pair, 0) + 2
@@ -179,11 +166,10 @@ def build_prompt():
 def fallback_story():
     survivors = random.sample(active_game.alive, k=min(3, len(active_game.alive)))
     threat = random.choice(["a horde of fast zombies", "a collapsing building", "a betrayal from within"])
-    option1 = f"1. The group tries to escape together, risking injury."
-    option2 = f"2. One survivor distracts the threat while others flee."
     return (
         f"As night falls, {', '.join(survivors)} face {threat}.\n"
-        f"{option1}\n{option2}"
+        f"1. The group tries to escape together, risking injury.\n"
+        f"2. One survivor distracts the threat while others flee."
     )
 
 async def generate_story():
@@ -205,26 +191,22 @@ async def generate_story():
             }
         )
         data = response.json()
-        logger.debug(f"🧾 Raw OpenRouter response: {json.dumps(data, indent=2)}")
-
-        if "choices" in data and isinstance(data["choices"], list) and data["choices"]:
-            return data["choices"][0]["message"]["content"]
-        else:
-            logger.warning("⚠️ 'choices' missing or empty in OpenRouter response.")
+        if response.status_code != 200 or "choices" not in data or not data["choices"]:
+            logger.warning("⚠️ OpenRouter response malformed or empty.")
             return fallback_story()
-
+        return data["choices"][0]["message"]["content"]
     except Exception as e:
         logger.error(f"💥 Exception during story generation: {e}")
-        return f"💥 Failed to generate story: {e}"
+        return fallback_story()
 
-async def tally_votes(message):
+async def tally_votes(message: discord.Message):
     votes = {"1️⃣": 0, "2️⃣": 0}
     for reaction in message.reactions:
         if reaction.emoji in votes:
             votes[reaction.emoji] = reaction.count - 1
     return votes
 
-def extract_options(text):
+def extract_options(text: str):
     lines = text.split("\n")
     options = [line for line in lines if line.strip().startswith(("1.", "2."))]
     return options if len(options) == 2 else ["Option A", "Option B"]
@@ -246,17 +228,17 @@ def update_stats(g: GameState):
     for name in g.alive:
         g.stats["dignified"][name] -= random.randint(0, 2)
 
-def get_top_stat(stat_dict):
+def get_top_stat(stat_dict: dict):
     if not stat_dict:
         return "None"
     top = max(stat_dict.items(), key=lambda x: x[1])
     return f"{top[0]} ({top[1]} points)"
 
 class ZombieGame(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    async def start_game_flow(self, channel, user_id):
+    async def start_game_flow(self, channel: discord.TextChannel, user_id: int):
         if channel.id != ZOMBIE_CHANNEL_ID:
             await channel.send("❌ This command can only be run in the designated game channel.")
             return
@@ -283,27 +265,20 @@ class ZombieGame(commands.Cog):
         except Exception as e:
             await ctx.send(f"💥 Error during game flow: `{e}`")
 
-    async def run_round(self, channel):
+    async def run_round(self, channel: discord.TextChannel):
         g = active_game
         g.round += 1
 
-        try:
-            story = await generate_story()
-        except Exception as e:
-            await channel.send(f"Error generating story: {e}")
-            end_game()
-            return
-
+        story = await generate_story()
         g.options = extract_options(story)
+
         await channel.send(f"**Round {g.round}**\n{story}")
         vote_msg = await channel.send("Vote now! ⏳ 15 seconds...\nReact with 1️⃣ or 2️⃣")
         await vote_msg.add_reaction("1️⃣")
         await vote_msg.add_reaction("2️⃣")
 
         await asyncio.sleep(15)
-        
         vote_msg = await channel.fetch_message(vote_msg.id)
-
         votes = await tally_votes(vote_msg)
 
         if votes["1️⃣"] == 0 and votes["2️⃣"] == 0:
@@ -337,7 +312,7 @@ class ZombieGame(commands.Cog):
 
         await self.run_round(channel)
 
-    async def end_summary(self, channel):
+    async def end_summary(self, channel: discord.TextChannel):
         g = active_game
         await channel.send("📜 **Game Summary**")
         await channel.send("🪦 Deaths (most recent first):\n" + "\n".join([f"• {name}" for name in g.dead]))
@@ -357,12 +332,8 @@ class ZombieGame(commands.Cog):
 
         await channel.send(f"🕊️ Most dignified: {get_top_stat(g.stats['dignified'])}")
 
-class VerifyCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
-async def setup(bot):
+# 🔧 Cog setup
+async def setup(bot: commands.Bot):
     cog = ZombieGame(bot)
     await bot.add_cog(cog)
     print("✅ ZombieGame cog loaded")
-    
