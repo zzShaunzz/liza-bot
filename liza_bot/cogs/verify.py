@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import os
+import logging
 
 # 🔒 Load secrets from environment variables
 RULES_MESSAGE_ID = int(os.environ.get("RULES_MESSAGE_ID", 0))
@@ -9,31 +10,34 @@ VERIFIED_ROLE_ID = int(os.environ.get("VERIFIED_ROLE_ID", 0))
 OWNER_ID = int(os.environ.get("OWNER_ID", 0))  # Optional: restrict !auditverify to owner
 
 class VerifyCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
-        bot.loop.create_task(self.backfill_verified_users())
+
+    async def cog_load(self):
+        # ✅ Safe async hook for post-init logic
+        self.bot.loop.create_task(self.backfill_verified_users())
 
     async def backfill_verified_users(self):
         await self.bot.wait_until_ready()
         await self.audit_verified_roles()
 
     async def audit_verified_roles(self):
-        guild = self.bot.get_guild(self.bot.guilds[0].id)
+        guild = self.bot.guilds[0] if self.bot.guilds else None
         if not guild:
-            print("[VerifyCog] ❌ Guild not found.")
+            logging.error("[VerifyCog] ❌ Guild not found.")
             return
 
         channel = guild.get_channel(RULES_CHANNEL_ID)
         role = guild.get_role(VERIFIED_ROLE_ID)
 
         if not channel or not role:
-            print("[VerifyCog] ❌ Channel or role not found.")
+            logging.error("[VerifyCog] ❌ Channel or role not found.")
             return
 
         try:
             message = await channel.fetch_message(RULES_MESSAGE_ID)
         except Exception as e:
-            print(f"[VerifyCog] ❌ Failed to fetch rules message: {e}")
+            logging.error(f"[VerifyCog] ❌ Failed to fetch rules message: {e}")
             return
 
         reacted_user_ids = set()
@@ -52,26 +56,22 @@ class VerifyCog(commands.Cog):
             has_role = role in member.roles
             reacted = member.id in reacted_user_ids
 
-            if reacted and not has_role:
-                try:
+            try:
+                if reacted and not has_role:
                     await member.add_roles(role)
                     verified_added += 1
-                    print(f"[VerifyCog] ✅ Added Verified role to {member.display_name}")
-                except Exception as e:
-                    print(f"[VerifyCog] ⚠️ Couldn't verify {member.display_name}: {e}")
-
-            elif not reacted and has_role:
-                try:
+                    logging.info(f"[VerifyCog] ✅ Added Verified role to {member.display_name}")
+                elif not reacted and has_role:
                     await member.remove_roles(role)
                     verified_removed += 1
-                    print(f"[VerifyCog] ❌ Removed Verified role from {member.display_name} (no reaction)")
-                except Exception as e:
-                    print(f"[VerifyCog] ⚠️ Failed to remove role from {member.display_name}: {e}")
+                    logging.info(f"[VerifyCog] ❌ Removed Verified role from {member.display_name} (no reaction)")
+            except Exception as e:
+                logging.warning(f"[VerifyCog] ⚠️ Role update failed for {member.display_name}: {e}")
 
-        print(f"[VerifyCog] 🔍 Audit complete: Verified {verified_added}, Removed {verified_removed}")
+        logging.info(f"[VerifyCog] 🔍 Audit complete: Verified {verified_added}, Removed {verified_removed}")
 
     @commands.command(name="auditverify")
-    async def auditverify_command(self, ctx):
+    async def auditverify_command(self, ctx: commands.Context):
         if OWNER_ID and ctx.author.id != OWNER_ID:
             await ctx.send("🚫 You don't have permission to run this command.")
             return
@@ -82,11 +82,11 @@ class VerifyCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        if payload.message_id != RULES_MESSAGE_ID:
-            return
-        if payload.channel_id != RULES_CHANNEL_ID:
-            return
-        if str(payload.emoji) != "✅":
+        if (
+            payload.message_id != RULES_MESSAGE_ID or
+            payload.channel_id != RULES_CHANNEL_ID or
+            str(payload.emoji) != "✅"
+        ):
             return
 
         guild = self.bot.get_guild(payload.guild_id)
@@ -105,17 +105,17 @@ class VerifyCog(commands.Cog):
         if role and role not in member.roles:
             try:
                 await member.add_roles(role)
-                print(f"[VerifyCog] ✅ Added Verified role to {member.display_name}")
+                logging.info(f"[VerifyCog] ✅ Added Verified role to {member.display_name}")
             except Exception as e:
-                print(f"[VerifyCog] ⚠️ Failed to add role: {e}")
+                logging.warning(f"[VerifyCog] ⚠️ Failed to add role: {e}")
 
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
-        if payload.message_id != RULES_MESSAGE_ID:
-            return
-        if payload.channel_id != RULES_CHANNEL_ID:
-            return
-        if str(payload.emoji) != "✅":
+        if (
+            payload.message_id != RULES_MESSAGE_ID or
+            payload.channel_id != RULES_CHANNEL_ID or
+            str(payload.emoji) != "✅"
+        ):
             return
 
         guild = self.bot.get_guild(payload.guild_id)
@@ -134,10 +134,10 @@ class VerifyCog(commands.Cog):
         if role and role in member.roles:
             try:
                 await member.remove_roles(role)
-                print(f"[VerifyCog] ❌ Removed Verified role from {member.display_name}")
+                logging.info(f"[VerifyCog] ❌ Removed Verified role from {member.display_name}")
             except Exception as e:
-                print(f"[VerifyCog] ⚠️ Failed to remove role: {e}")
+                logging.warning(f"[VerifyCog] ⚠️ Failed to remove role: {e}")
 
 # Required setup function for cog loading
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(VerifyCog(bot))
