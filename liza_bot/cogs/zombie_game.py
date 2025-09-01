@@ -5,11 +5,11 @@ import os, random, asyncio, logging, requests
 from dotenv import load_dotenv
 from collections import defaultdict
 
-# 🧠 Logging setup
+# Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 🔒 Load environment variables
+# Load environment variables
 load_dotenv()
 ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -121,37 +121,10 @@ class GameState:
             "conflicts": defaultdict(int),
             "dignified": {name: 100 for name in CHARACTERS}
         }
-        self.story_seed = self.generate_seed()
+        self.story_seed = None  # Will be generated dynamically
         self.terminated = False
 
-    def generate_seed(self):
-        settings = [
-            "an abandoned ski resort buried in snow",
-            "a flooded metro tunnel beneath a ruined city",
-            "a desert ghost town with no working vehicles",
-            "a quarantined hospital with flickering lights",
-            "a coastal village slowly sinking into the sea"
-        ]
-        return random.choice(settings)
-
 active_game = None
-
-def start_game(user_id: int):
-    global active_game
-    active_game = GameState(user_id)
-
-    for i in range(len(CHARACTERS)):
-        for j in range(i + 1, len(CHARACTERS)):
-            pair = tuple(sorted((CHARACTERS[i], CHARACTERS[j])))
-            active_game.stats["bonds"][pair] = 1
-
-    for name, info in CHARACTER_INFO.items():
-        for partner in info.get("likely_pairs", []):
-            pair = tuple(sorted((name, partner)))
-            active_game.stats["bonds"][pair] += 2
-        for rival in info.get("likely_conflicts", []):
-            pair = tuple(sorted((name, rival)))
-            active_game.stats["conflicts"][pair] += 2
 
 def end_game():
     global active_game
@@ -160,33 +133,6 @@ def end_game():
 
 def is_active():
     return active_game is not None and not active_game.terminated
-
-def build_intro_context():
-    g = active_game
-    context = f"🧠 Setting: {g.story_seed}\n"
-
-    if g.round > 1:
-        context += f"\n📍 Outcome of Round {g.round - 1}:\n{g.last_events}\n"
-
-    context += f"\n🧍 Alive characters:\n{', '.join(g.alive)}\n"
-
-    traits_summary = "\n".join(
-        [f"{name}: {', '.join(CHARACTER_INFO[name]['traits'])}" for name in g.alive]
-    )
-    context += f"\n🧠 Character traits:\n{traits_summary}\n"
-
-    context += (
-        "\n🎬 Write a vivid zombie survival scene of at least 100 words. "
-        "Describe what each character is doing. Format with paragraph breaks and bullet points. "
-        "Do not introduce a new threat yet."
-    )
-    return context
-
-def build_dilemma_context():
-    return (
-        "🧠 Based on the scene above, describe the new problem that arises. "
-        "Limit the dilemma to 2 sentences. Do not include any choices yet."
-    )
 
 async def generate_ai_text(messages, temperature=0.9):
     for attempt in range(3):
@@ -215,6 +161,63 @@ async def generate_ai_text(messages, temperature=0.9):
             logger.error(f"AI request failed: {e}")
             await asyncio.sleep(2 ** attempt)
     return None
+
+async def generate_unique_setting():
+    prompt = (
+        "🎬 Generate a unique setting for a zombie survival story. "
+        "It should be vivid, eerie, and specific. Avoid generic locations. "
+        "Describe the environment in one sentence."
+    )
+    messages = [
+        {"role": "system", "content": "You are a horror storyteller."},
+        {"role": "user", "content": prompt}
+    ]
+    return await generate_ai_text(messages, temperature=0.9)
+
+async def start_game_async(user_id: int):
+    global active_game
+    active_game = GameState(user_id)
+    active_game.story_seed = await generate_unique_setting()
+
+    for i in range(len(CHARACTERS)):
+        for j in range(i + 1, len(CHARACTERS)):
+            pair = tuple(sorted((CHARACTERS[i], CHARACTERS[j])))
+            active_game.stats["bonds"][pair] = 1
+
+    for name, info in CHARACTER_INFO.items():
+        for partner in info.get("likely_pairs", []):
+            pair = tuple(sorted((name, partner)))
+            active_game.stats["bonds"][pair] += 2
+        for rival in info.get("likely_conflicts", []):
+            pair = tuple(sorted((name, rival)))
+            active_game.stats["conflicts"][pair] += 2
+
+def build_intro_context():
+    g = active_game
+    context = f"🧠 Setting: {g.story_seed}\n"
+
+    if g.round > 1:
+        context += f"\n📍 Outcome of Round {g.round - 1}:\n{g.last_events}\n"
+
+    context += f"\n🧍 Alive characters:\n{', '.join(g.alive)}\n"
+
+    traits_summary = "\n".join(
+        [f"{name}: {', '.join(CHARACTER_INFO[name]['traits'])}" for name in g.alive]
+    )
+    context += f"\n🧠 Character traits:\n{traits_summary}\n"
+
+    context += (
+        "\n🎬 Write a vivid zombie survival scene of at least 100 words. "
+        "Describe what each character is doing. Format with paragraph breaks and bullet points. "
+        "Do not introduce a new threat yet."
+    )
+    return context
+
+def build_dilemma_context():
+    return (
+        "🧠 Based on the scene above, describe the new problem that arises. "
+        "Limit the dilemma to 2 sentences. Do not include any choices yet."
+    )
 
 async def generate_intro_scene():
     prompt = build_intro_context()
@@ -245,6 +248,9 @@ async def stream_text(message: discord.Message, full_text: str, delay: float = 0
         if active_game and active_game.terminated:
             return
         output += bullet + "\n"
+        if len(output) > 1900:
+            output += "\n⚠️ Scene truncated due to Discord message limit."
+            break
         try:
             await message.edit(content=output.strip())
             await asyncio.sleep(delay)
@@ -301,7 +307,7 @@ class ZombieGame(commands.Cog):
         if is_active():
             await ctx.send("⚠️ A zombie game is already running.")
             return
-        start_game(ctx.author.id)
+        await start_game_async(ctx.author.id)
         msg = await ctx.send("🧟‍♀️ Zombie survival game starting in...")
         await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
         await msg.edit(content="🧟‍♀️ Game started!")
@@ -316,7 +322,7 @@ class ZombieGame(commands.Cog):
         if is_active():
             await interaction.followup.send("⚠️ A zombie game is already running.", ephemeral=True)
             return
-        start_game(interaction.user.id)
+        await start_game_async(interaction.user.id)
         msg = await interaction.channel.send("🧟‍♀️ Zombie survival game starting in...")
         await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
         await msg.edit(content="🧟‍♀️ Game started!")
@@ -436,7 +442,7 @@ class ZombieGame(commands.Cog):
         await channel.send(f"🕊️ Most dignified: {get_top_stat(g.stats['dignified'])}")
         await channel.send("🎬 Thanks for surviving (or not) the zombie apocalypse. Until next time...")
 
-# 🔧 Cog setup
+# Cog setup
 async def setup(bot: commands.Bot):
     await bot.add_cog(ZombieGame(bot))
     print("✅ ZombieGame cog loaded")
