@@ -264,8 +264,8 @@ class ZombieGame(commands.Cog):
             await channel.send("⚠️ A zombie game is already in progress.")
             return
         start_game(user_id)
-        await channel.send("🧟‍♀️ Zombie survival game started! Round 1 begins in 5 seconds...")
-        await asyncio.sleep(5)
+        await channel.send("🧟‍♀️ Zombie survival game started! Round 1 begins in 3 seconds...")
+        await asyncio.sleep(3)
         await self.run_round(channel)
 
     @app_commands.command(name="lizazombie", description="Start the zombie survival RPG with Liza")
