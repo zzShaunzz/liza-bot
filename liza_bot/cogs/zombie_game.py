@@ -175,6 +175,16 @@ def build_prompt():
     prompt += "Describe a new zombie-related problem the group faces. Include character insights, emerging tensions, and two options to vote on.\n"
     return prompt
 
+def fallback_story():
+    survivors = random.sample(active_game.alive, k=min(3, len(active_game.alive)))
+    threat = random.choice(["a horde of fast zombies", "a collapsing building", "a betrayal from within"])
+    option1 = f"1. The group tries to escape together, risking injury."
+    option2 = f"2. One survivor distracts the threat while others flee."
+    return (
+        f"As night falls, {', '.join(survivors)} face {threat}.\n"
+        f"{option1}\n{option2}"
+    )
+
 async def generate_story():
     messages = [
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
@@ -194,16 +204,13 @@ async def generate_story():
             }
         )
         data = response.json()
+        logger.debug(f"🧾 Raw OpenRouter response: {json.dumps(data, indent=2)}")
 
-        # Log full response for debugging
-        logger.debug(f"🧾 OpenRouter response: {data}")
-
-        # Defensive check
         if "choices" in data and isinstance(data["choices"], list) and data["choices"]:
             return data["choices"][0]["message"]["content"]
         else:
             logger.warning("⚠️ 'choices' missing or empty in OpenRouter response.")
-            return "⚠️ No story generated. The storyteller seems to be silent this round."
+            return fallback_story()
 
     except Exception as e:
         logger.error(f"💥 Exception during story generation: {e}")
