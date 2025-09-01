@@ -357,6 +357,11 @@ class ZombieGame(commands.Cog):
 
         await channel.send(f"🕊️ Most dignified: {get_top_stat(g.stats['dignified'])}")
 
+class VerifyCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        # Do not use await here
+
 async def setup(bot):
-    await bot.add_cog(ZombieGame(bot))
+    await bot.add_cog(VerifyCog(bot))
     print("✅ ZombieGame cog loaded")
