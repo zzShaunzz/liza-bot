@@ -9,18 +9,21 @@ import sys
 import traceback
 import logging
 
+# 🧠 Logging setup for container visibility
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]  # This ensures logs go to stdout
+    handlers=[logging.StreamHandler()]
 )
+logger = logging.getLogger(__name__)
 
-# 🔒 Load token
+# 🔒 Load environment variables
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-if not TOKEN:
-    print("❌ DISCORD_BOT_TOKEN is missing.")
-    exit()
+APPLICATION_ID = os.getenv("APPLICATION_ID")  # ✅ Add this to fix slash command sync
+if not TOKEN or not APPLICATION_ID:
+    logger.error("❌ DISCORD_BOT_TOKEN or APPLICATION_ID is missing.")
+    sys.exit(1)
 
 # 🌐 Flask keep_alive
 app = Flask("keep_alive")
@@ -36,7 +39,12 @@ def keep_alive():
 intents = discord.Intents.default()
 intents.message_content = intents.messages = intents.reactions = intents.guilds = True
 intents.members = True  # 🔥 Required for fetch_members and role audits
-bot = commands.Bot(command_prefix=["!", "/"], intents=intents)
+
+bot = commands.Bot(
+    command_prefix=["!", "/"],
+    intents=intents,
+    application_id=int(APPLICATION_ID)  # ✅ Required for slash command registration
+)
 tree = bot.tree
 
 # 🔧 Configs
