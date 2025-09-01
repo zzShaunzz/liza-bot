@@ -6,6 +6,7 @@ from flask import Flask
 from threading import Thread
 from dotenv import load_dotenv
 import sys
+import traceback
 
 # 🔒 Load token
 load_dotenv()
@@ -249,6 +250,8 @@ async def on_guild_channel_pins_update(channel, _):
         elif msg.pinned:
             await forward_media(msg)
 
+import traceback  # make sure this is at the top of your file
+
 @bot.event
 async def on_ready():
     cogs_to_load = [
@@ -266,8 +269,8 @@ async def on_ready():
         try:
             await bot.load_extension(cog)
             logger.info(f"✅ Loaded {cog}")
-        except Exception as e:
-            logger.error(f"❌ Failed to load {cog}: {e}")
+        except Exception:
+            logger.error(f"❌ Failed to load {cog}:\n{traceback.format_exc()}")
 
     try:
         synced = await bot.tree.sync()
