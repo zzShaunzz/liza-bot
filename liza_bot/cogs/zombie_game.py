@@ -167,7 +167,7 @@ def build_intro_context():
     context += f"\nCharacter traits:\n{traits_summary}\n"
 
     context += (
-        "Write a vivid scene describing what each character is doing at the start of this round. "
+        "Write a vivid, paragraph-length scene describing what each character is doing at the start of this round. "
         "Include emotional tension, physical actions, and hints of interpersonal dynamics. "
         "Do not describe any new threat or dilemma yet — just set the scene.\n"
     )
@@ -215,8 +215,8 @@ async def generate_intro_scene(retry=False):
         data = response.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
-        if not content and not retry:
-            logger.warning("⚠️ Intro scene empty — retrying once...")
+        if len(content.split()) < 40 and not retry:
+            logger.warning("⚠️ Intro scene too short — retrying once...")
             return await generate_intro_scene(retry=True)
 
         if not content:
@@ -304,6 +304,15 @@ def get_top_stat(stat_dict: dict):
     top = max(stat_dict.items(), key=lambda x: x[1])
     return f"{top[0]} ({top[1]} points)"
 
+async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
+    for i in range(seconds, 0, -1):
+        try:
+            await message.edit(content=f"{prefix} {i}")
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.warning(f"⚠️ Countdown edit failed: {e}")
+            break
+
 class ZombieGame(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -314,8 +323,8 @@ class ZombieGame(commands.Cog):
             await ctx.send("⚠️ A zombie game is already running.")
             return
         start_game(ctx.author.id)
-        await ctx.send("🧟‍♀️ Zombie survival game started! Round 1 begins in 3 seconds...")
-        await asyncio.sleep(3)
+        msg = await ctx.send("🧟‍♀️ Zombie survival game starting in...")
+        await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
         await self.run_round(ctx.channel)
 
     @app_commands.command(name="lizazombie", description="Start a zombie survival game")
@@ -327,9 +336,17 @@ class ZombieGame(commands.Cog):
             await interaction.response.send_message("⚠️ A zombie game is already running.", ephemeral=True)
             return
         start_game(interaction.user.id)
-        await interaction.response.send_message("🧟‍♀️ Zombie survival game started! Round 1 begins in 3 seconds...")
-        await asyncio.sleep(3)
+        msg = await interaction.channel.send("🧟‍♀️ Zombie survival game starting in...")
+        await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
         await self.run_round(interaction.channel)
+
+    @app_commands.command(name="endgame", description="Manually end the current zombie game")
+    async def endgame_slash(self, interaction: discord.Interaction):
+        if not is_active():
+            await interaction.response.send_message("⚠️ No active game to end.", ephemeral=True)
+            return
+        end_game()
+        await interaction.response.send_message("🧟‍♀️ Zombie game manually ended.")
 
     @commands.command(name="testintro")
     async def test_intro(self, ctx: commands.Context):
@@ -350,19 +367,20 @@ class ZombieGame(commands.Cog):
         g.round += 1
 
         # Phase 1: Intro scene
+        count_msg = await channel.send("🎭 Scene begins in...")
+        await countdown_message(count_msg, 5, "🎭 Scene begins in...")
         intro = await generate_intro_scene()
-        await channel.send(f"🎭 **Scene**\n{intro}")
+        await count_msg.edit(content=f"🎭 **Scene**\n{intro}")
         await asyncio.sleep(15)
 
         # Phase 2: Dilemma
         dilemma = await generate_story()
         g.options = extract_options(dilemma)
-        await channel.send(f"🧠 **Dilemma**\n{dilemma}")
-
-        vote_msg = await channel.send("Vote now! ⏳ 15 seconds...\nReact with 1️⃣ or 2️⃣")
+        dilemma_msg = await channel.send(f"🧠 **Dilemma**\n{dilemma}")
+        vote_msg = await channel.send("Vote now! ⏳\nReact with 1️⃣ or 2️⃣")
         await vote_msg.add_reaction("1️⃣")
         await vote_msg.add_reaction("2️⃣")
-        await asyncio.sleep(15)
+        await countdown_message(vote_msg, 15, "⏳ Voting ends in...")
 
         vote_msg = await channel.fetch_message(vote_msg.id)
         votes = await tally_votes(vote_msg)
@@ -424,4 +442,5 @@ async def setup(bot: commands.Bot):
     cog = ZombieGame(bot)
     await bot.add_cog(cog)
     bot.tree.add_command(cog.lizazombie_slash)
+    bot.tree.add_command(cog.endgame_slash)
     print("✅ ZombieGame cog loaded")
