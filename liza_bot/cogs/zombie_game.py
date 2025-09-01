@@ -18,6 +18,7 @@ if not OPENROUTER_API_KEY:
     logger.error("❌ OPENROUTER_API_KEY is missing.")
     raise SystemExit(1)
 
+# 🎭 Character definitions
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
         "age": 15, "gender": "Male",
@@ -102,8 +103,7 @@ CHARACTER_INFO = {
         "siblings": [],
         "likely_pairs": ["Nico Muy", "Gabe Muy", "Aiden Muy", "Dylan Pastorin"],
         "likely_conflicts": ["Noah Nainggolan"]
-    },
-    # 🔁 Add all other characters here as needed
+    }
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
 
@@ -152,7 +152,7 @@ def end_game():
 def is_active():
     return active_game is not None
 
-def build_context():
+def build_intro_context():
     g = active_game
     context = f"Round {g.round}\n"
 
@@ -169,24 +169,15 @@ def build_context():
     context += (
         "Write a vivid scene describing what each character is doing at the start of this round. "
         "Include emotional tension, physical actions, and hints of interpersonal dynamics. "
-        "Do not describe the new dilemma yet—just set the scene.\n"
+        "Do not describe any new threat or dilemma yet — just set the scene.\n"
     )
 
     return context
 
-def fallback_story():
-    survivors = random.sample(active_game.alive, k=min(3, len(active_game.alive)))
-    threat = random.choice(["a horde of fast zombies", "a collapsing building", "a betrayal from within"])
-    return (
-        f"As night falls, {', '.join(survivors)} face {threat}.\n"
-        f"1. The group tries to escape together, risking injury.\n"
-        f"2. One survivor distracts the threat while others flee."
-    )
-
 async def generate_intro_scene():
     messages = [
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
-        {"role": "user", "content": build_context()}
+        {"role": "user", "content": build_intro_context()}
     ]
 
     try:
@@ -203,11 +194,12 @@ async def generate_intro_scene():
             }
         )
 
+        logger.debug(f"[ZombieGame] 🧠 Raw intro response: {response.text}")
         data = response.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
         if not content:
-            logger.warning("⚠️ AI intro scene was empty. Falling back.")
+            logger.warning("⚠️ AI intro scene was empty.")
             return "The survivors gather in silence, each lost in thought as the night deepens."
 
         logger.info("[ZombieGame] ✅ Intro scene generated.")
@@ -259,7 +251,7 @@ async def generate_story():
             }
         )
 
-        logger.debug(f"[ZombieGame] 🧠 Raw response: {response.text}")
+        logger.debug(f"[ZombieGame] 🧠 Raw dilemma response: {response.text}")
         data = response.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
@@ -267,7 +259,7 @@ async def generate_story():
             logger.warning("⚠️ AI dilemma response was empty.")
             return "The group faces a mysterious threat, but the details are unclear."
 
-        logger.info("[ZombieGame] ✅ AI dilemma generated.")
+        logger.info("[ZombieGame] ✅ Dilemma generated.")
         return content
 
     except Exception as e:
