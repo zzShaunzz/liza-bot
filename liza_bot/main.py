@@ -7,6 +7,13 @@ from threading import Thread
 from dotenv import load_dotenv
 import sys
 import traceback
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]  # This ensures logs go to stdout
+)
 
 # 🔒 Load token
 load_dotenv()
