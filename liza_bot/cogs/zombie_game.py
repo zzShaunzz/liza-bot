@@ -177,7 +177,7 @@ def build_prompt():
     return prompt
 
 def fallback_story():
-    survivors = random.sample(active_game.alive, k=min(3, len(active_game.alive)))
+    survivors = r andom.sample(active_game.alive, k=min(3, len(active_game.alive)))
     threat = random.choice(["a horde of fast zombies", "a collapsing building", "a betrayal from within"])
     option1 = f"1. The group tries to escape together, risking injury."
     option2 = f"2. One survivor distracts the threat while others flee."
@@ -296,11 +296,14 @@ class ZombieGame(commands.Cog):
 
         g.options = extract_options(story)
         await channel.send(f"**Round {g.round}**\n{story}")
-        vote_msg = await channel.send("Vote now! ⏳ 30 seconds...\nReact with 1️⃣ or 2️⃣")
+        vote_msg = await channel.send("Vote now! ⏳ 15 seconds...\nReact with 1️⃣ or 2️⃣")
         await vote_msg.add_reaction("1️⃣")
         await vote_msg.add_reaction("2️⃣")
 
-        await asyncio.sleep(30)
+        await asyncio.sleep(15)
+        
+        vote_msg = await channel.fetch_message(vote_msg.id)
+
         votes = await tally_votes(vote_msg)
 
         if votes["1️⃣"] == 0 and votes["2️⃣"] == 0:
