@@ -317,6 +317,7 @@ class ZombieGame(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    # Legacy command to start the game
     @commands.command(name="lizazombie")
     async def lizazombie_legacy(self, ctx: commands.Context):
         if is_active():
@@ -327,6 +328,7 @@ class ZombieGame(commands.Cog):
         await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
         await self.run_round(ctx.channel)
 
+    # Slash command to start the game
     @app_commands.command(name="lizazombie", description="Start a zombie survival game")
     async def lizazombie_slash(self, interaction: discord.Interaction):
         if interaction.channel.id != ZOMBIE_CHANNEL_ID:
@@ -340,6 +342,16 @@ class ZombieGame(commands.Cog):
         await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
         await self.run_round(interaction.channel)
 
+    # Legacy command to end the game
+    @commands.command(name="endgame")
+    async def endgame_legacy(self, ctx: commands.Context):
+        if not is_active():
+            await ctx.send("⚠️ No active game to end.")
+            return
+        end_game()
+        await ctx.send("🧟‍♀️ Zombie game manually ended.")
+
+    # Slash command to end the game
     @app_commands.command(name="endgame", description="Manually end the current zombie game")
     async def endgame_slash(self, interaction: discord.Interaction):
         if not is_active():
@@ -348,6 +360,7 @@ class ZombieGame(commands.Cog):
         end_game()
         await interaction.response.send_message("🧟‍♀️ Zombie game manually ended.")
 
+    # Debug command to test intro generation
     @commands.command(name="testintro")
     async def test_intro(self, ctx: commands.Context):
         prompt = build_intro_context()
@@ -355,6 +368,7 @@ class ZombieGame(commands.Cog):
         response = await generate_intro_scene()
         await ctx.send(f"🧠 Response:\n{response}")
 
+    # Debug command to test dilemma generation
     @commands.command(name="testdilemma")
     async def test_dilemma(self, ctx: commands.Context):
         prompt = build_dilemma_context()
@@ -439,8 +453,5 @@ class ZombieGame(commands.Cog):
 
 # 🔧 Cog setup
 async def setup(bot: commands.Bot):
-    cog = ZombieGame(bot)
-    await bot.add_cog(cog)
-    bot.tree.add_command(cog.lizazombie_slash)
-    bot.tree.add_command(cog.endgame_slash)
+    await bot.add_cog(ZombieGame(bot))
     print("✅ ZombieGame cog loaded")
