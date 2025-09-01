@@ -250,8 +250,54 @@ class ZombieGame(commands.Cog):
         await self.start_game_flow(interaction.channel, interaction.user.id)
 
     @commands.command(name="lizazombie")
-    async def lizazombie_prefix(self, ctx: commands.Context):
-        await ctx.send(f"🧟 Starting zombie game for <@{ctx.author.id}>...")
+    async def lizazombie(self, ctx: commands.Context):
+        await self.start_game_flow(ctx.channel, ctx.author.id)
+
+    async def start_game_flow(self, channel: discord.TextChannel, user_id: int):
+        try:
+            if is_active():
+                await channel.send("⚠️ A zombie game is already in progress.")
+                return
+
+            start_game(user_id)
+            await channel.send(f"🧟 Starting zombie game for <@{user_id}>...")
+
+            max_rounds = 5
+            for round_num in range(1, max_rounds + 1):
+                active_game.round = round_num
+
+                story = await generate_story()
+                active_game.last_events = story
+                update_stats(active_game)
+
+                options = extract_options(story)
+                active_game.options = options
+
+                chosen = random.choice(["1️⃣", "2️⃣"])
+                active_game.last_choice = chosen
+
+                embed = discord.Embed(
+                    title=f"🧟 Round {round_num}",
+                    description=story,
+                    color=0x8B0000
+                )
+                embed.set_footer(text=f"Auto-chosen option: {chosen}")
+                await channel.send(embed=embed)
+
+                await asyncio.sleep(2)
+
+            await channel.send("🏁 The zombie game has ended. Here's a summary:")
+            summary = (
+                f"Rounds played: {active_game.round}\n"
+                f"Alive: {', '.join(active_game.alive)}\n"
+                f"Dead: {', '.join(active_game.dead)}"
+            )
+            await channel.send(summary)
+
+            end_game()
+
+        except Exception as e:
+            await channel.send(f"💥 Error during game flow: `{e}`")
 
     async def run_round(self, channel):
         g = active_game
