@@ -180,19 +180,34 @@ async def generate_story():
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
         {"role": "user", "content": build_prompt()}
     ]
-    response = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": MODEL,
-            "messages": messages,
-            "temperature": 0.8
-        }
-    )
-    return response.json()["choices"][0]["message"]["content"]
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": MODEL,
+                "messages": messages,
+                "temperature": 0.8
+            }
+        )
+        data = response.json()
+
+        # Log full response for debugging
+        logger.debug(f"🧾 OpenRouter response: {data}")
+
+        # Defensive check
+        if "choices" in data and isinstance(data["choices"], list) and data["choices"]:
+            return data["choices"][0]["message"]["content"]
+        else:
+            logger.warning("⚠️ 'choices' missing or empty in OpenRouter response.")
+            return "⚠️ No story generated. The storyteller seems to be silent this round."
+
+    except Exception as e:
+        logger.error(f"💥 Exception during story generation: {e}")
+        return f"💥 Failed to generate story: {e}"
 
 async def tally_votes(message):
     votes = {"1️⃣": 0, "2️⃣": 0}
