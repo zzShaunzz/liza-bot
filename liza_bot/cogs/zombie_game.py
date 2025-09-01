@@ -1,12 +1,24 @@
-import discord, asyncio, os, requests, random
+import discord
+import asyncio
+import os
+import requests
+import random
+import logging
+
 from discord.ext import commands
 from discord import app_commands
 from dotenv import load_dotenv
+
+# 🧠 Logging setup for Northflank visibility
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID"))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL = os.getenv("MODEL", "openrouter/mixtral")
+
+logger.info("🧠 zombie_game.py is executing")
 
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
