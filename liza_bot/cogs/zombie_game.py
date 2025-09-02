@@ -41,6 +41,17 @@ async def send_bullets_one_by_one(channel: discord.TextChannel, bullets: list, d
         await channel.send(bullet)
         await asyncio.sleep(delay)
 
+async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
+    for i in range(seconds, 0, -1):
+        if active_game and active_game.terminated:
+            return
+        try:
+            await message.edit(content=f"{prefix} {i}")
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.warning(f"Countdown failed: {e}")
+            break
+
 # ---------- Characters ----------
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
