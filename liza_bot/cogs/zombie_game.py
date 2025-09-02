@@ -42,12 +42,22 @@ def enforce_bullets(text: str) -> list:
         stripped = line.strip().strip("•").strip("*")
         if not stripped:
             continue
+
+        # If line starts with a bullet, start a new bullet
         if line.strip().startswith("•") or line.strip().startswith("*"):
             if current:
                 bullets.append(f"• {bold_character_names(current.strip())}")
             current = stripped
         else:
-            current += " " + stripped
+            # If current bullet looks like a character line, continue joining
+            if current and any(name in current for name in CHARACTER_INFO):
+                current += " " + stripped
+            else:
+                # Ambient narration — flush current and treat this as standalone
+                if current:
+                    bullets.append(f"• {bold_character_names(current.strip())}")
+                    current = ""
+                bullets.append(f"• {bold_character_names(stripped)}")
 
     if current:
         bullets.append(f"• {bold_character_names(current.strip())}")
@@ -60,10 +70,19 @@ def enforce_bullets(text: str) -> list:
 
     return spaced
 
-async def stream_bullets_in_message(channel: discord.TextChannel, bullets: list, delay: float = 0.8):
+async def stream_bullets_in_message(
+    channel: discord.TextChannel,
+    bullets: list,
+    delay: float = 0.8
+):
     """Send one message and edit it to reveal bullets progressively."""
     content = ""
-    msg = await channel.send("...")
+    try:
+        msg = await channel.send("...")
+    except Exception as e:
+        logger.warning(f"Initial message failed: {e}")
+        return
+
     for bullet in bullets:
         if bullet.strip():
             content += bullet + "\n\n"
@@ -421,7 +440,7 @@ class ZombieGame(commands.Cog):
             return
         scene_bullets = enforce_bullets(bold_character_names(raw_scene))
         await channel.send("━━━━━━━━━━━━━━\n🎭 **Scene**")
-        await stream_bullets_in_message(channel, scene_bullets)
+        await stream_bullets_in_message(channel, scene_bullets, delay=1.4)
         g.story_context += "\n".join(scene_bullets) + "\n"
 
         # Phase 2: Summary
@@ -438,14 +457,14 @@ class ZombieGame(commands.Cog):
             return
         health_bullets = enforce_bullets(bold_character_names(raw_health))
         await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**")
-        await stream_bullets_in_message(channel, health_bullets)
+        await stream_bullets_in_message(channel, health_bullets, delay=1.4)
 
         # Phase 3b: Group Dynamics
         raw_dynamics = await generate_group_dynamics()
         if raw_dynamics:
             dynamics_bullets = enforce_bullets(bold_character_names(raw_dynamics))
             await channel.send("💬 **Group Dynamics**")
-            await stream_bullets_in_message(channel, dynamics_bullets)
+            await stream_bullets_in_message(channel, dynamics_bullets, delay=1.4)
 
         # Phase 4: Dilemma
         raw_dilemma = await generate_dilemma("\n".join(scene_bullets), "\n".join(health_bullets))
@@ -454,7 +473,7 @@ class ZombieGame(commands.Cog):
             return
         dilemma_bullets = enforce_bullets(bold_character_names(raw_dilemma))
         await channel.send("━━━━━━━━━━━━━━\n🧠 **Dilemma**")
-        await stream_bullets_in_message(channel, dilemma_bullets)
+        await stream_bullets_in_message(channel, dilemma_bullets, delay=1.4)
 
         # Phase 5: Choices
         raw_choices = await generate_choices("\n".join(dilemma_bullets))
@@ -469,7 +488,7 @@ class ZombieGame(commands.Cog):
             end_game()
             return
         await channel.send("━━━━━━━━━━━━━━\n🔀 **Choices**")
-        await stream_bullets_in_message(channel, g.options)
+        await stream_bullets_in_message(channel, g.options, delay=1.2)
 
         # Voting
         choices_msg = await channel.send("🗳️ React to vote!")
@@ -521,9 +540,9 @@ class ZombieGame(commands.Cog):
 
         # Send deaths and survivors
         await channel.send("💀 **Deaths This Round**")
-        await stream_bullets_in_message(channel, deaths_list)
+        await stream_bullets_in_message(channel, deaths_list, delay=1.2)
         await channel.send("🧍 **Remaining Survivors**")
-        await stream_bullets_in_message(channel, survivors_list)
+        await stream_bullets_in_message(channel, survivors_list, delay=1.2)
 
         # End condition check
         if len(g.alive) <= 1:
@@ -544,7 +563,7 @@ class ZombieGame(commands.Cog):
 
         deaths_block = [f"• {bold_name(name)}" for name in g.dead] or ["• None"]
         await channel.send("🪦 **Deaths (most recent first)**")
-        await stream_bullets_in_message(channel, deaths_block)
+        await stream_bullets_in_message(channel, deaths_block, delay=1.4)
 
         await channel.send("━━━━━━━━━━━━━━\n📊 **Final Stats**")
         await channel.send(f"🏅 Most helpful:\n• {get_top_stat(g.stats['helpful'])}")
@@ -575,7 +594,7 @@ class ZombieGame(commands.Cog):
         ], temperature=0.85)
         recap_bullets = enforce_bullets(bold_character_names(raw_recap or "⚠️ Recap generation failed."))
         await channel.send("━━━━━━━━━━━━━━\n🎞️ **Final Recap**")
-        await stream_bullets_in_message(channel, recap_bullets)
+        await stream_bullets_in_message(channel, recap_bullets, delay=1.4)
         await channel.send("🎬 Thanks for surviving (or not) the zombie apocalypse. Until next time...")
 
 # Cog setup
