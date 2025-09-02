@@ -33,29 +33,46 @@ def bold_character_names(text: str) -> str:
     return text
 
 def enforce_bullets(text: str) -> list:
-    """Convert AI text into a list of clean bullet lines with spacing."""
-    matches = re.findall(r"(?:•|\*)\s*(.+?)(?=(?:\s*(?:•|\*)|$))", text, re.DOTALL)
+    """Clean and consolidate bullet content into full lines with spacing."""
+    lines = text.splitlines()
     bullets = []
-    if matches:
-        for line in matches:
-            clean = line.strip().strip('*').strip('•')
-            if clean:
-                bullets.append(f"• {clean}")
-    else:
-        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-        bullets = [f"• {s.strip()}" for s in sentences if s.strip()]
+    current = ""
+
+    for line in lines:
+        stripped = line.strip().strip("•").strip("*")
+        if not stripped:
+            continue
+        if line.strip().startswith("•") or line.strip().startswith("*"):
+            if current:
+                bullets.append(f"• {bold_character_names(current.strip())}")
+            current = stripped
+        else:
+            current += " " + stripped
+
+    if current:
+        bullets.append(f"• {bold_character_names(current.strip())}")
+
     # Add spacing between bullets
     spaced = []
     for b in bullets:
         spaced.append(b)
-        spaced.append("")  # blank line between bullets
+        spaced.append("")  # blank line for pacing
+
     return spaced
 
-async def send_bullets_one_by_one(channel: discord.TextChannel, bullets: list, delay: float = 0.8):
+async def stream_bullets_in_message(channel: discord.TextChannel, bullets: list, delay: float = 0.8):
+    """Send one message and edit it to reveal bullets progressively."""
+    content = ""
+    msg = await channel.send("...")
     for bullet in bullets:
-        if bullet.strip():  # Only send non-empty lines
-            await channel.send(bullet)
-            await asyncio.sleep(delay)
+        if bullet.strip():
+            content += bullet + "\n\n"
+            try:
+                await msg.edit(content=content.strip())
+                await asyncio.sleep(delay)
+            except Exception as e:
+                logger.warning(f"Bullet stream failed: {e}")
+                break
 
 async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
     for i in range(seconds, 0, -1):
