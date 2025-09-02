@@ -342,7 +342,7 @@ def build_choices_prompt(dilemma_text):
     return (
         f"{active_game.story_context}\n"
         f"Dilemma:\n{dilemma_text}\n\n"
-        "🧠 Provide exactly two distinct choices the group must vote on. "
+        "Based on the current scene, list exactly 2 distinct choices the survivors could make next. Format each as a bullet point. Do not continue the story or describe what characters already did. These are branching options for the players to choose from."
         "Format each as a numbered bullet starting with '1.' and '2.'."
     )
 
@@ -507,7 +507,7 @@ class ZombieGame(commands.Cog):
         await choices_msg.add_reaction("1️⃣")
         await choices_msg.add_reaction("2️⃣")
         countdown_msg = await channel.send("⏳ Voting ends in...")
-        await countdown_message(countdown_msg, 15, "⏳ Voting ends in...")
+        await countdown_message(countdown_msg, 20, "⏳ Voting ends in...")
         choices_msg = await channel.fetch_message(choices_msg.id)
         votes = await tally_votes(choices_msg)
         if votes["1️⃣"] == 0 and votes["2️⃣"] == 0:
