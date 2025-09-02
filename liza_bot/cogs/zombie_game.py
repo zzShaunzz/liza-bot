@@ -390,7 +390,7 @@ class ZombieGame(commands.Cog):
         await start_game_async(ctx.author.id)
         msg = await ctx.send("🧟‍♀️ Zombie survival game starting in...")
         await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
-        await msg.edit(content="🧟‍♀️ Game started!")
+        await msg.edit(content="🧟‍♀️ Game loading...")
         await self.run_round(ctx.channel)
 
     @app_commands.command(name="lizazombie", description="Start a zombie survival game")
