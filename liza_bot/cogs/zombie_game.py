@@ -227,7 +227,8 @@ def build_health_prompt():
     return (
         f"🧍 Alive characters: {', '.join(g.alive)}\n\n"
         "🧠 For each character, describe their physical condition in 2–3 words (e.g., 'lightly injured', 'exhausted'). "
-        "Format each as a bullet point using •. Then summarize the group’s emotional state and any rising bonds or conflicts in bullet format."
+        "Format each as a bullet point using •. Then summarize the group’s emotional state and any rising bonds or conflicts in bullet format using •. "
+        "Do not include any headers or extra commentary."
     )
 
 def build_dilemma_prompt():
