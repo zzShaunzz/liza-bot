@@ -246,6 +246,42 @@ def build_choices_prompt():
         "Format each as a numbered bullet point starting with '1.' and '2.'. Do not include any other text."
     )
 
+# AI generators
+async def generate_scene():
+    messages = [
+        {"role": "system", "content": "You are a horror narrator generating cinematic zombie survival scenes. Format each character’s action as a bullet point using •."},
+        {"role": "user", "content": build_scene_prompt()}
+    ]
+    return await generate_ai_text(messages)
+
+async def generate_scene_summary(scene_text):
+    messages = [
+        {"role": "system", "content": "You are a horror narrator summarizing a zombie survival scene."},
+        {"role": "user", "content": build_scene_summary_prompt(scene_text)}
+    ]
+    return await generate_ai_text(messages, temperature=0.7)
+
+async def generate_health_report():
+    messages = [
+        {"role": "system", "content": "You are a horror narrator tracking character wellbeing and group dynamics. Always return bullet points using •. Do not include headers or extra commentary."},
+        {"role": "user", "content": build_health_prompt()}
+    ]
+    return await generate_ai_text(messages)
+
+async def generate_dilemma():
+    messages = [
+        {"role": "system", "content": "You are a horror narrator generating dilemmas for a survival game. Do not include choices."},
+        {"role": "user", "content": build_dilemma_prompt()}
+    ]
+    return await generate_ai_text(messages, temperature=0.7)
+
+async def generate_choices():
+    messages = [
+        {"role": "system", "content": "You are a horror narrator generating voting choices. Always return exactly two numbered options starting with '1.' and '2.'."},
+        {"role": "user", "content": build_choices_prompt()}
+    ]
+    return await generate_ai_text(messages, temperature=0.6)
+
 # Streaming functions
 async def stream_text_wordwise(message: discord.Message, full_text: str, delay: float = 0.03, chunk_size: int = 4):
     if not full_text:
@@ -352,7 +388,7 @@ class ZombieGame(commands.Cog):
         # Phase 1: Scene generation
         raw_scene = await generate_scene()
         if g.terminated or not raw_scene:
-            await channel.send("🛑 Game terminated or scene generation failed.")
+            await channel.send("⚠️ Scene generation failed. Try again later.")
             return
         scene_text = bold_character_names(enforce_bullets(raw_scene))
         await channel.send("━━━━━━━━━━━━━━\n🎭 **Scene**\n\n")
@@ -399,7 +435,7 @@ class ZombieGame(commands.Cog):
         # Phase 4: Dilemma generation
         raw_dilemma = await generate_dilemma()
         if g.terminated or not raw_dilemma:
-            await channel.send("🛑 Game terminated or dilemma generation failed.")
+            await channel.send("⚠️ Dilemma generation failed.")
             return
         dilemma_text = enforce_bullets(bold_character_names(raw_dilemma))
         await channel.send("━━━━━━━━━━━━━━\n🧠 **Dilemma**\n\n")
@@ -410,7 +446,7 @@ class ZombieGame(commands.Cog):
         # Phase 5: Choice generation
         raw_choices = await generate_choices()
         if g.terminated or not raw_choices:
-            await channel.send("🛑 Game terminated or choice generation failed.")
+            await channel.send("⚠️ Choice generation failed.")
             return
 
         lines = [line.strip() for line in raw_choices.split("\n") if line.strip()]
