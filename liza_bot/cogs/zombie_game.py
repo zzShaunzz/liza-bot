@@ -21,16 +21,16 @@ def bold_name(name: str) -> str:
 
 def bold_character_names(text: str) -> str:
     for name in CHARACTER_INFO:
-        # Match name at start of bullet line
+        # Bold full name
         text = re.sub(
-            rf"(•\s*)({re.escape(name)})(?=\s*:)",
-            rf"\1**\2**",
+            rf"\b({re.escape(name)})\b",
+            r"**\1**",
             text
         )
-        # Match possessive form like Shaun's
+        # Bold possessive form like Shaun's
         text = re.sub(
-            rf"(•\s*)({re.escape(name)})(?='s)",
-            rf"\1**\2**",
+            rf"\b({re.escape(name)})'s\b",
+            r"**\1**'s",
             text
         )
     return text
@@ -121,7 +121,7 @@ async def countdown_message(message: discord.Message, seconds: int, prefix: str 
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
         "age": 15, "gender": "Male",
-        "traits": ["organizer", "strong", "fast", "heat-sensitive", "pattern-adapter"],
+        "traits": ["quick planner", "boxing experience", "fast", "heat-sensitive", "pattern-adapter"],
         "siblings": ["Addison Sadsarin"],
         "likely_pairs": ["Addison Sadsarin", "Aiden Muy", "Gabe Muy", "Dylan Pastorin"],
         "likely_conflicts": ["Jordan"]
@@ -135,7 +135,7 @@ CHARACTER_INFO = {
     },
     "Dylan Pastorin": {
         "age": 21, "gender": "Male",
-        "traits": ["mentally brave", "protective", "strong with tools", "slow mover", "manipulation-prone", "extroverted"],
+        "traits": ["mentally brave", "protective", "smart with firearms", "slow mover", "manipulation-prone", "extroverted"],
         "siblings": [],
         "likely_pairs": ["Noah Nainggolan", "Gabe Muy", "Shaun Sadsarin", "Vivian Muy"],
         "likely_conflicts": ["Kate Nainggolan"]
@@ -152,14 +152,14 @@ CHARACTER_INFO = {
         "traits": ["conniving", "lucky", "swimmer"],
         "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
-        "likely_conflicts": ["Aiden Muy"]
+        "likely_conflicts": ["Noah Nainggolan"]
     },
     "Kate Nainggolan": {
         "age": 14, "gender": "Female",
         "traits": ["manipulative", "quick-witted", "enduring", "persuasive"],
         "siblings": ["Jill Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
-        "likely_conflicts": ["Nico Muy"]
+        "likely_conflicts": ["Aiden Muy"]
     },
     "Vivian Muy": {
         "age": 18, "gender": "Female",
@@ -170,38 +170,38 @@ CHARACTER_INFO = {
     },
     "Gabe Muy": {
         "age": 17, "gender": "Male",
-        "traits": ["strong", "peacekeeper", "withdraws under pressure", "hand-to-hand expert"],
+        "traits": ["wrestler", "peacekeeper", "withdraws under pressure", "on the smaller side"],
         "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
-        "likely_conflicts": ["Shaun Sadsarin"]
+        "likely_conflicts": ["Addison Sadsarin"]
     },
     "Aiden Muy": {
         "age": 14, "gender": "Male",
         "traits": ["agile", "crafty", "chef", "mental reader"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
-        "likely_conflicts": ["Addison Sadsarin"]
+        "likely_conflicts": ["Ella Muy"]
     },
     "Ella Muy": {
         "age": 11, "gender": "Female",
         "traits": ["physically reliant", "luckiest"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"],
         "likely_pairs": ["Addison Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
-        "likely_conflicts": ["Nico Muy"]
+        "likely_conflicts": ["Shaun Sadsarin"]
     },
     "Nico Muy": {
         "age": 12, "gender": "Male",
         "traits": ["daring", "comical", "risk-taker", "needs guidance"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"],
         "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
-        "likely_conflicts": ["Ella Muy"]
+        "likely_conflicts": ["Vivian Muy"]
     },
     "Jordan": {
         "age": 13, "gender": "Male",
-        "traits": ["gentle", "quietly skilled", "stronger than he seems"],
+        "traits": ["easy-going", "quietly skilled", "funny"],
         "siblings": [],
         "likely_pairs": ["Nico Muy", "Gabe Muy", "Aiden Muy", "Dylan Pastorin"],
-        "likely_conflicts": ["Noah Nainggolan"]
+        "likely_conflicts": ["Dylan Pastorin"]
     }
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
@@ -297,6 +297,7 @@ def build_scene_prompt():
     return (
         "You are a text-only assistant. Do not generate or suggest images under any circumstances. "
         "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. Stay fully in-character and in-world."
+        "The world has fallen to a zombie outbreak. The survivors are hunted, exhausted, and emotionally frayed. Every scene continues their desperate struggle against the undead and each other."
         "Respond only with narrative, dialogue, and bullet-pointed text.\n\n"
         f"{g.story_context}\n"
         f"🧍 Alive: {', '.join([bold_name(n) for n in g.alive])}\n"
@@ -451,7 +452,8 @@ class ZombieGame(commands.Cog):
         if not raw_scene:
             await channel.send("⚠️ Scene generation failed.")
             return
-        scene_bullets = enforce_bullets(bold_character_names(raw_scene))
+        scene_text = bold_character_names(raw_scene)
+        scene_bullets = enforce_bullets(scene_text)
         await channel.send("━━━━━━━━━━━━━━\n🎭 **Scene**")
         await stream_bullets_in_message(channel, scene_bullets, delay=5.0)
         g.story_context += "\n".join(scene_bullets) + "\n"
