@@ -23,19 +23,19 @@ def bold_character_names(text: str) -> str:
     for name in CHARACTER_INFO:
         parts = name.split()
         for part in parts:
-            # Skip if already bolded
+            # Bold first names (e.g. "Kate") if not already bolded
             text = re.sub(
                 rf"(?<!\*)\b({re.escape(part)})\b(?!\*)",
                 r"**\1**",
                 text
             )
-        # Bold full name
+        # Bold full names (e.g. "Kate Nainggolan")
         text = re.sub(
             rf"(?<!\*)\b({re.escape(name)})\b(?!\*)",
             r"**\1**",
             text
         )
-        # Bold possessive form
+        # Bold possessives (e.g. "Kate's")
         text = re.sub(
             rf"(?<!\*)\b({re.escape(name)})'s\b(?!\*)",
             r"**\1**'s",
@@ -43,8 +43,12 @@ def bold_character_names(text: str) -> str:
         )
     return text
 
+def split_into_sentences(text: str) -> list:
+    """Split ambient narration into individual sentences."""
+    return re.split(r'(?<=[.!?])\s+', text.strip())
+
 def enforce_bullets(text: str) -> list:
-    """Ensure bullet formatting with spacing and bolded names."""
+    """Clean and consolidate bullet content into full lines with spacing."""
     lines = text.splitlines()
     bullets = []
     current = ""
@@ -57,21 +61,35 @@ def enforce_bullets(text: str) -> list:
         contains_name = any(name.split()[0] in stripped for name in CHARACTER_INFO)
         is_bullet = line.strip().startswith("•") or line.strip().startswith("*")
 
+        # Start a new bullet if line is a bullet or contains a character name
         if is_bullet or contains_name:
             if current:
-                bullets.append(f"• {bold_character_names(current.strip())}")
+                cleaned = current.strip().rstrip("*")
+                bullets.append(f"• {bold_character_names(cleaned)}")
             current = stripped
         else:
             current += " " + stripped
 
+    # Flush final bullet
     if current:
-        bullets.append(f"• {bold_character_names(current.strip())}")
+        cleaned = current.strip().rstrip("*")
+        bullets.append(f"• {bold_character_names(cleaned)}")
+
+    # Split ambient narration bullets into individual sentences
+    final_bullets = []
+    for b in bullets:
+        if any(name.split()[0] in b for name in CHARACTER_INFO):
+            final_bullets.append(b)
+        else:
+            for sentence in split_into_sentences(b):
+                if sentence.strip():
+                    final_bullets.append(f"• {sentence.strip()}")
 
     # Add spacing between bullets
     spaced = []
-    for b in bullets:
+    for b in final_bullets:
         spaced.append(b)
-        spaced.append("")
+        spaced.append("")  # blank line for pacing
 
     return spaced
     
