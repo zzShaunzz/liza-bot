@@ -233,7 +233,11 @@ def build_dilemma_prompt():
     return "🧠 Based on the scene and health report above, describe the new problem that arises. Limit the dilemma to 2 sentences. Format each sentence as a bullet point."
 
 def build_choices_prompt():
-    return "🧠 Based on the dilemma above, generate two distinct choices the group must vote on. Format each as a numbered bullet point. Keep them short and dramatic."
+    return (
+        "🧠 Based on the dilemma above, generate exactly two distinct choices the group must vote on.\n"
+        "Format each as a numbered bullet point starting with '1.' and '2.'.\n"
+        "Do not include any other text or explanation."
+    )
 
 async def generate_scene():
     messages = [
@@ -258,8 +262,8 @@ async def generate_health_report():
 
 async def generate_dilemma():
     messages = [
-        {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
-        {"role": "user", "content": build_dilemma_prompt()}
+        {"role": "system", "content": "You are a horror narrator generating structured voting choices for a survival game. Always return exactly two numbered options starting with '1.' and '2.'."},
+        {"role": "user", "content": build_choices_prompt()}
     ]
     return await generate_ai_text(messages, temperature=0.7)
 
@@ -268,7 +272,7 @@ async def generate_choices():
         {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
         {"role": "user", "content": build_choices_prompt()}
     ]
-    return await generate_ai_text(messages, temperature=0.8)
+    return await generate_ai_text(messages, temperature=0.6)
 
 async def stream_text_wordwise(message: discord.Message, full_text: str, delay: float = 0.03, chunk_size: int = 4):
     if not full_text:
@@ -302,9 +306,9 @@ async def chunk_and_stream(channel: discord.TextChannel, full_text: str, delay: 
     if current:
         chunks.append(current.rstrip())
 
-    for chunk in chunks:
-        await asyncio.sleep(delay)
-        await channel.send(chunk)
+for chunk in chunks:
+    msg = await channel.send("...")  # Placeholder message
+    await stream_text_wordwise(msg, chunk, delay=delay)
 
 async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
     for i in range(seconds, 0, -1):
@@ -384,7 +388,7 @@ class ZombieGame(commands.Cog):
         # Phase 2: Scene summary
         raw_summary = await generate_scene_summary(scene_text)
         if raw_summary:
-            summary_text = enforce_bullets(bold_character_names(raw_summary.strip().split(".")[0] + "."))
+            summary_text = bold_character_names(raw_summary.strip())
             await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n📝 **Scene Summary**\n\n{summary_text}", delay=0.03)
         await asyncio.sleep(2)
 
@@ -402,8 +406,8 @@ class ZombieGame(commands.Cog):
             elif line.strip():
                 relationship_lines.append(line.strip())
 
-        health_block = enforce_bullets(bold_character_names("\n".join(health_lines)))
-        relationship_block = enforce_bullets(bold_character_names("\n".join(relationship_lines)))
+        health_block = bold_character_names("\n".join(health_lines))
+        relationship_block = bold_character_names("\n".join(relationship_lines))
         full_health = f"━━━━━━━━━━━━━━\n🩺 **Health Status**\n\n{health_block}\n\n💬 **Group Dynamics**\n\n{relationship_block}"
         await chunk_and_stream(channel, full_health, delay=0.03)
         await asyncio.sleep(2)
