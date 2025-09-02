@@ -34,7 +34,7 @@ def enforce_bullets(text: str) -> str:
     # Match both • and * bullets
     matches = re.findall(r"(?:•|\*)\s*(.+?)(?=(?:\s*(?:•|\*)|$))", text, re.DOTALL)
     if matches:
-        return "\n".join([f"• {line.strip()}" for line in matches if line.strip()])
+        return "\n".join([f"• {line.strip().strip('*').strip('•')}" for line in matches if line.strip()])
     
     # Fallback: split into sentences
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
@@ -225,18 +225,22 @@ def build_scene_summary_prompt(scene_text):
 def build_health_prompt():
     g = active_game
     return (
-        f"🧍 Alive characters: {', '.join([name for name in g.alive])}\n\n"
-        "🧠 For each character, describe their physical condition in 2–3 words (e.g., 'lightly injured', 'exhausted'). Format each as a bullet point. Then summarize the group’s emotional state and any rising bonds or conflicts in bullet format."
+        f"🧍 Alive characters: {', '.join(g.alive)}\n\n"
+        "🧠 For each character, describe their physical condition in 2–3 words (e.g., 'lightly injured', 'exhausted'). "
+        "Format each as a bullet point using •. Then summarize the group’s emotional state and any rising bonds or conflicts in bullet format."
     )
 
 def build_dilemma_prompt():
-    return "🧠 Based on the scene and health report above, describe the new problem that arises. Limit the dilemma to 2 sentences. Format each sentence as a bullet point."
+    return (
+        "🧠 Based on the scene and health report above, describe the new problem that arises. "
+        "Limit the dilemma to exactly two sentences. Do not include any choices or options. "
+        "Format each sentence as a bullet point using •."
+    )
 
 def build_choices_prompt():
     return (
-        "🧠 Based on the dilemma above, generate exactly two distinct choices the group must vote on.\n"
-        "Format each as a numbered bullet point starting with '1.' and '2.'.\n"
-        "Do not include any other text or explanation."
+        "🧠 Based on the dilemma above, generate exactly two distinct choices the group must vote on. "
+        "Format each as a numbered bullet point starting with '1.' and '2.'. Do not include any other text."
     )
 
 async def generate_scene():
@@ -262,14 +266,14 @@ async def generate_health_report():
 
 async def generate_dilemma():
     messages = [
-        {"role": "system", "content": "You are a horror narrator generating structured voting choices for a survival game. Always return exactly two numbered options starting with '1.' and '2.'."},
+        {"role": "system", "content": "You are a horror narrator generating dilemmas for a survival game. Do not include choices."},
         {"role": "user", "content": build_choices_prompt()}
     ]
     return await generate_ai_text(messages, temperature=0.7)
 
 async def generate_choices():
     messages = [
-        {"role": "system", "content": "You are a horror storyteller narrating a zombie survival RPG."},
+        {"role": "system", "content": "You are a horror narrator generating voting choices. Always return exactly two numbered options starting with '1.' and '2.'."},
         {"role": "user", "content": build_choices_prompt()}
     ]
     return await generate_ai_text(messages, temperature=0.6)
@@ -381,7 +385,7 @@ class ZombieGame(commands.Cog):
         if g.terminated or not raw_scene:
             await channel.send("🛑 Game terminated or scene generation failed.")
             return
-        scene_text = enforce_bullets(bold_character_names(raw_scene))
+        scene_text = bold_character_names(enforce_bullets(raw_scene))
         await channel.send("━━━━━━━━━━━━━━\n🎭 **Scene**\n\n")
         msg = await channel.send("...")
         await stream_text_wordwise(msg, scene_text, delay=0.03)
@@ -396,8 +400,8 @@ class ZombieGame(commands.Cog):
 
         # Phase 3: Health report
         raw_health = await generate_health_report()
-        if g.terminated or not raw_health:
-            await channel.send("🛑 Game terminated or health report failed.")
+        if g.terminated or not raw_health or raw_health.strip() == "":
+            await channel.send("⚠️ Health report failed to generate.")
             return
 
         health_lines = []
