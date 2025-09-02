@@ -31,9 +31,12 @@ def bold_character_names(text: str) -> str:
     return text
 
 def enforce_bullets(text: str) -> str:
-    matches = re.findall(r"•\s*(.+?)(?=\s*•|$)", text, re.DOTALL)
+    # Match both • and * bullets
+    matches = re.findall(r"(?:•|\*)\s*(.+?)(?=(?:\s*(?:•|\*)|$))", text, re.DOTALL)
     if matches:
         return "\n".join([f"• {line.strip()}" for line in matches if line.strip()])
+    
+    # Fallback: split into sentences
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     return "\n".join([f"• {s.strip()}" for s in sentences if s.strip()])
 
