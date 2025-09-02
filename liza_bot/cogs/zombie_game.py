@@ -405,7 +405,7 @@ class ZombieGame(commands.Cog):
         await start_game_async(interaction.user.id)
         msg = await interaction.channel.send("🧟‍♀️ Zombie survival game starting in...")
         await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
-        await msg.edit(content="🧟‍♀️ Game started!")
+        await msg.edit(content="🧟‍♀️ Game loading...")
         await self.run_round(interaction.channel)
 
     @commands.command(name="endzombie")
