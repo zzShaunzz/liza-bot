@@ -381,15 +381,17 @@ class ZombieGame(commands.Cog):
         if g.terminated or not raw_scene:
             await channel.send("🛑 Game terminated or scene generation failed.")
             return
-        scene_text = bold_character_names(raw_scene)
-        await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n🎭 **Scene**\n\n{scene_text}", delay=0.03)
+        scene_text = enforce_bullets(bold_character_names(raw_scene))
+        await channel.send("━━━━━━━━━━━━━━\n🎭 **Scene**\n\n")
+        msg = await channel.send("...")
+        await stream_text_wordwise(msg, scene_text, delay=0.03)
         await asyncio.sleep(2)
 
         # Phase 2: Scene summary
         raw_summary = await generate_scene_summary(scene_text)
         if raw_summary:
             summary_text = bold_character_names(raw_summary.strip())
-            await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n📝 **Scene Summary**\n\n{summary_text}", delay=0.03)
+            await channel.send("━━━━━━━━━━━━━━\n📝 **Scene Summary**\n\n")
         await asyncio.sleep(2)
 
         # Phase 3: Health report
@@ -408,9 +410,15 @@ class ZombieGame(commands.Cog):
 
         health_block = bold_character_names("\n".join(health_lines))
         relationship_block = bold_character_names("\n".join(relationship_lines))
-        full_health = f"━━━━━━━━━━━━━━\n🩺 **Health Status**\n\n{health_block}\n\n💬 **Group Dynamics**\n\n{relationship_block}"
-        await chunk_and_stream(channel, full_health, delay=0.03)
-        await asyncio.sleep(2)
+
+        await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**\n\n")
+        msg = await channel.send("...")
+        await stream_text_wordwise(msg, health_block, delay=0.03)
+
+        await asyncio.sleep(1)
+        await channel.send("💬 **Group Dynamics**\n\n")
+        msg = await channel.send("...")
+        await stream_text_wordwise(msg, relationship_block, delay=0.03)
 
         # Phase 4: Dilemma generation
         raw_dilemma = await generate_dilemma()
@@ -418,8 +426,9 @@ class ZombieGame(commands.Cog):
             await channel.send("🛑 Game terminated or dilemma generation failed.")
             return
         dilemma_text = enforce_bullets(bold_character_names(raw_dilemma))
-        await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n🧠 **Dilemma**\n\n{dilemma_text}", delay=0.03)
-        await asyncio.sleep(2)
+        await channel.send("━━━━━━━━━━━━━━\n🧠 **Dilemma**\n\n")
+        msg = await channel.send("...")
+        await stream_text_wordwise(msg, dilemma_text, delay=0.03)
 
         # Phase 5: Choice generation
         raw_choices = await generate_choices()
@@ -427,14 +436,17 @@ class ZombieGame(commands.Cog):
             await channel.send("🛑 Game terminated or choice generation failed.")
             return
 
-        g.options = [line.strip() for line in raw_choices.split("\n") if line.strip().startswith(("1.", "2."))]
+        lines = [line.strip() for line in raw_choices.split("\n") if line.strip()]
+        numbered = [line for line in lines if line.startswith(("1.", "2."))]
+        g.options = numbered if len(numbered) == 2 else lines[:2]
+
         if len(g.options) != 2:
             await channel.send("⚠️ AI did not return two valid choices. Ending game.")
             end_game()
             return
 
         choices_text = enforce_bullets(bold_character_names("\n".join(g.options)))
-        await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n🔀 **Choices**\n\n{choices_text}", delay=0.03)
+        await channel.send("━━━━━━━━━━━━━━\n🔀 **Choices**\n\n")
         choices_msg = await channel.send("🗳️ React to vote!")
         await choices_msg.add_reaction("1️⃣")
         await choices_msg.add_reaction("2️⃣")
