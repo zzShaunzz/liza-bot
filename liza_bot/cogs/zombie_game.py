@@ -36,44 +36,46 @@ def bold_character_names(text: str) -> str:
     return text
 
 def enforce_bullets(text: str) -> list:
-    """Clean and consolidate bullet content into full lines with spacing."""
+    """Ensure character lines are bullet-formatted and separated from narration."""
     lines = text.splitlines()
     bullets = []
     current = ""
 
     for line in lines:
-        stripped = line.strip().lstrip("•").lstrip("*")
+        stripped = line.strip()
         if not stripped:
             continue
 
-        is_bullet = line.strip().startswith("•") or line.strip().startswith("*")
         contains_name = any(name in stripped for name in CHARACTER_INFO)
+        is_bullet = stripped.startswith("•") or stripped.startswith("*")
 
         if is_bullet and ":" in stripped:
-            # New character bullet
+            if current:
+                bullets.append(f"• {bold_character_names(current.strip())}")
+            current = stripped.lstrip("•*").strip()
+
+        elif contains_name and ":" in stripped:
             if current:
                 bullets.append(f"• {bold_character_names(current.strip())}")
             current = stripped
 
         elif current and contains_name:
-            # Continuation of character bullet
             current += " " + stripped
 
         else:
-            # Ambient narration or standalone line
             if current:
                 bullets.append(f"• {bold_character_names(current.strip())}")
                 current = ""
-            bullets.append(stripped)  # no bullet prefix for ambient lines
+            bullets.append(stripped)
 
     if current:
         bullets.append(f"• {bold_character_names(current.strip())}")
 
-    # Add spacing between bullets and narration
+    # Add spacing
     spaced = []
     for b in bullets:
         spaced.append(b)
-        spaced.append("")  # blank line for pacing
+        spaced.append("")
 
     return spaced
 
