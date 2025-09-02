@@ -52,10 +52,10 @@ def enforce_bullets(text: str) -> list:
     return spaced
 
 async def send_bullets_one_by_one(channel: discord.TextChannel, bullets: list, delay: float = 0.8):
-    """Send each bullet as its own message with a delay."""
     for bullet in bullets:
-        await channel.send(bullet)
-        await asyncio.sleep(delay)
+        if bullet.strip():  # Only send non-empty lines
+            await channel.send(bullet)
+            await asyncio.sleep(delay)
 
 async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
     for i in range(seconds, 0, -1):
