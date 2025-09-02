@@ -296,6 +296,7 @@ def build_scene_prompt():
         f"🧠 Traits:\n{traits}\n\n"
         "🎬 Continue the story. Include every alive character. "
         "Format each action as a bullet point using •. Keep bullets short and on their own lines."
+        "Avoid repeating scenes or plotlines from previous sessions, but have a continuous plot per respective session. Introduce fresh threats, emotional shifts, or unexpected events."
     )
 
 def build_scene_summary_prompt(scene_text):
@@ -445,6 +446,7 @@ class ZombieGame(commands.Cog):
         await channel.send("━━━━━━━━━━━━━━\n🎭 **Scene**")
         await stream_bullets_in_message(channel, scene_bullets, delay=4.0)
         g.story_context += "\n".join(scene_bullets) + "\n"
+        g.story_context = "\n".join(g.story_context.strip().splitlines()[-12:])  # keep last 12 lines
 
         # Phase 2: Summary
         raw_summary = await generate_scene_summary("\n".join(scene_bullets))
