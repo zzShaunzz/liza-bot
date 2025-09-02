@@ -471,7 +471,11 @@ class ZombieGame(commands.Cog):
             await channel.send("⚠️ Scene generation failed.")
             return
         scene_text = bold_character_names(raw_scene)
-        scene_bullets = enforce_bullets(scene_text)
+        scene_bullets = [
+        format_bullet(bold_character_names(line.lstrip("•").strip()))
+        for line in enforce_bullets(scene_text)
+        if line.strip()
+        ]
         await channel.send("━━━━━━━━━━━━━━\n🎭 **Scene**")
         await stream_bullets_in_message(channel, scene_bullets, delay=4.5)
         g.story_context += "\n".join(scene_bullets) + "\n"
@@ -505,24 +509,57 @@ class ZombieGame(commands.Cog):
             if name not in reported:
                 enforced.append(bold_character_names(f"{name}: *No status reported*"))
         
-        # Final formatting
+        # Final formatting: Health Status
+        raw_health = await generate_health_report()
+        if not raw_health:
+            await channel.send("⚠️ Health report failed.")
+            return
+        
+        raw_bolded_health = bold_character_names(raw_health)
+        enforced_health = enforce_bullets(raw_bolded_health)
+
+        # Clean up health lines to remove scene spillover
+        cleaned_health_lines = []
+        for line in enforced_health:
+            if ":" in line:
+                name, status = line.split(":", 1)
+                cleaned_line = f"{name.strip()}: {status.strip().split('.')[0]}"
+                cleaned_health_lines.append(cleaned_line)
+        
+        # Track which characters were mentioned
+        reported = set()
+        for line in enforced_health:
+            for name in CHARACTER_INFO:
+                if name in line:
+                    reported.add(name)
+        
+        # Add missing characters with fallback status
+        for name in CHARACTER_INFO:
+            if name not in reported:
+                enforced_health.append(bold_character_names(f"{name}: *No status reported*"))
+        
+        # Clean and format
         health_bullets = [
             format_bullet(bold_character_names(line))
-            for line in enforced
-            if line.strip()
+            for line in cleaned_health_lines
+            if line.strip() and line.strip() != "•"
         ]
         
         await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**")
         await stream_bullets_in_message(channel, health_bullets, delay=5.0)
-
+        
         # Phase 3b: Group Dynamics
         raw_dynamics = await generate_group_dynamics()
         if raw_dynamics:
+            raw_bolded_dynamics = bold_character_names(raw_dynamics)
+            enforced_dynamics = enforce_bullets(raw_bolded_dynamics)
+        
             dynamics_bullets = [
-                format_bullet(bold_character_names(line))
-                for line in enforce_bullets(bold_character_names(raw_dynamics))
-                if line.strip()
+                format_bullet(line.lstrip("•").strip())
+                for line in enforced_dynamics
+                if line.strip() and line.strip() != "•"
             ]
+        
             await channel.send("💬 **Group Dynamics**")
             await stream_bullets_in_message(channel, dynamics_bullets, delay=4.5)
 
@@ -531,7 +568,8 @@ class ZombieGame(commands.Cog):
         if not raw_dilemma:
             await channel.send("⚠️ Dilemma generation failed.")
             return
-        raw_bolded = bold_character_names(raw_dilemma)
+        raw_cleaned = "\n".join([line.lstrip("•").strip() for line in raw_dilemma.splitlines() if line.strip()])
+        raw_bolded = bold_character_names(raw_cleaned)
         dilemma_bullets = [
             format_bullet(bold_character_names(line))
             for line in enforce_bullets(raw_bolded)
