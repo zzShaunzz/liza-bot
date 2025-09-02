@@ -20,20 +20,36 @@ def bold_name(name: str) -> str:
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
-    names = set()
-    for full in CHARACTER_INFO.keys():
-        names.add(full)
-        names.update(full.split())
-    for name in sorted(names, key=len, reverse=True):
-        text = re.sub(rf"(?<!\*)\b{re.escape(name)}\b(?!\*)", bold_name(name), text, flags=re.IGNORECASE)
+    name_parts = set()
+    for full_name in CHARACTER_INFO.keys():
+        name_parts.add(full_name)
+        for part in full_name.split():
+            name_parts.add(part)
+    sorted_names = sorted(name_parts, key=len, reverse=True)
+    for name in sorted_names:
+        # Match "Name" or "Name's" and bold the entire match
+        pattern = re.compile(rf"(?<!\*)\b({re.escape(name)}(?:'s)?)\b(?!\*)", re.IGNORECASE)
+        text = pattern.sub(lambda m: f"**{m.group(1)}**", text)
     return text
 
 def enforce_bullets(text: str) -> list:
-    """Convert AI text into a list of bullet lines."""
+    """Convert AI text into a list of clean bullet lines with spacing."""
     matches = re.findall(r"(?:•|\*)\s*(.+?)(?=(?:\s*(?:•|\*)|$))", text, re.DOTALL)
+    bullets = []
     if matches:
-        return [f"• {m.strip().strip('*').strip('•')}" for m in matches if m.strip()]
-    return [f"• {s.strip()}" for s in re.split(r'(?<=[.!?])\s+', text.strip()) if s.strip()]
+        for line in matches:
+            clean = line.strip().strip('*').strip('•')
+            if clean:
+                bullets.append(f"• {clean}")
+    else:
+        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        bullets = [f"• {s.strip()}" for s in sentences if s.strip()]
+    # Add spacing between bullets
+    spaced = []
+    for b in bullets:
+        spaced.append(b)
+        spaced.append("")  # blank line between bullets
+    return spaced
 
 async def send_bullets_one_by_one(channel: discord.TextChannel, bullets: list, delay: float = 0.8):
     """Send each bullet as its own message with a delay."""
