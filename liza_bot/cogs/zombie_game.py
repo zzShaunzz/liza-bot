@@ -20,16 +20,19 @@ def bold_name(name: str) -> str:
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
-    name_parts = set()
-    for full_name in CHARACTER_INFO.keys():
-        name_parts.add(full_name)
-        for part in full_name.split():
-            name_parts.add(part)
-    sorted_names = sorted(name_parts, key=len, reverse=True)
-    for name in sorted_names:
-        # Match "Name" or "Name's" and bold the entire match
-        pattern = re.compile(rf"(?<!\*)\b({re.escape(name)}(?:'s)?)\b(?!\*)", re.IGNORECASE)
-        text = pattern.sub(lambda m: f"**{m.group(1)}**", text)
+    for name in CHARACTER_INFO:
+        # Match name at start of bullet line
+        text = re.sub(
+            rf"(•\s*)({re.escape(name)})(?=\s*:)",
+            rf"\1**\2**",
+            text
+        )
+        # Match possessive form like Shaun's
+        text = re.sub(
+            rf"(•\s*)({re.escape(name)})(?='s)",
+            rf"\1**\2**",
+            text
+        )
     return text
 
 def enforce_bullets(text: str) -> list:
@@ -539,9 +542,9 @@ class ZombieGame(commands.Cog):
         g.story_context += narration_only + "\n"
 
         # Send deaths and survivors
-        await channel.send("💀 **Deaths This Round**")
+        await channel.send("━━━━━━━━━━━━━━\n💀 **Deaths This Round**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, deaths_list, delay=1.2)
-        await channel.send("🧍 **Remaining Survivors**")
+        await channel.send("━━━━━━━━━━━━━━\n🧍 **Remaining Survivors**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, survivors_list, delay=1.2)
 
         # End condition check
