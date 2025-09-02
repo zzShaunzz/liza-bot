@@ -306,9 +306,9 @@ async def chunk_and_stream(channel: discord.TextChannel, full_text: str, delay: 
     if current:
         chunks.append(current.rstrip())
 
-for chunk in chunks:
-    msg = await channel.send("...")  # Placeholder message
-    await stream_text_wordwise(msg, chunk, delay=delay)
+    for chunk in chunks:
+        msg = await channel.send("...")  # Placeholder message
+        await stream_text_wordwise(msg, chunk, delay=delay)
 
 async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
     for i in range(seconds, 0, -1):
