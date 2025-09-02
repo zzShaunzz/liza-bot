@@ -71,14 +71,14 @@ CHARACTER_INFO = {
         "traits": ["conniving", "lucky", "swimmer"],
         "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
-        "likely_conflicts": ["Noah Nainggolan"]
+        "likely_conflicts": ["Aiden Muy"]
     },
     "Kate Nainggolan": {
         "age": 14, "gender": "Female",
         "traits": ["manipulative", "quick-witted", "enduring", "persuasive"],
         "siblings": ["Jill Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
-        "likely_conflicts": ["Aiden Muy"]
+        "likely_conflicts": ["Nico Muy"]
     },
     "Vivian Muy": {
         "age": 18, "gender": "Female",
@@ -92,28 +92,28 @@ CHARACTER_INFO = {
         "traits": ["strong", "peacekeeper", "withdraws under pressure", "hand-to-hand expert"],
         "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
-        "likely_conflicts": ["Addison Sadsarin"]
+        "likely_conflicts": ["Shaun Sadsarin"]
     },
     "Aiden Muy": {
         "age": 14, "gender": "Male",
         "traits": ["agile", "crafty", "chef", "mental reader"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
-        "likely_conflicts": ["Ella Muy"]
+        "likely_conflicts": ["Addison Sadsarin"]
     },
     "Ella Muy": {
         "age": 11, "gender": "Female",
         "traits": ["physically reliant", "luckiest"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"],
         "likely_pairs": ["Addison Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
-        "likely_conflicts": ["Shaun Sadsarin"]
+        "likely_conflicts": ["Nico Muy"]
     },
     "Nico Muy": {
         "age": 12, "gender": "Male",
         "traits": ["daring", "comical", "risk-taker", "needs guidance"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"],
         "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
-        "likely_conflicts": ["Vivian Muy"]
+        "likely_conflicts": ["Ella Muy"]
     },
     "Jordan": {
         "age": 13, "gender": "Male",
@@ -374,7 +374,7 @@ class ZombieGame(commands.Cog):
         if g.terminated or not raw_scene:
             await channel.send("🛑 Game terminated or scene generation failed.")
             return
-        scene_text = enforce_bullets(bold_character_names(raw_scene))
+        scene_text = bold_character_names(raw_scene)
         await chunk_and_stream(channel, f"━━━━━━━━━━━━━━\n🎭 **Scene**\n\n{scene_text}", delay=0.03)
         await asyncio.sleep(2)
 
@@ -547,3 +547,15 @@ async def setup(bot: commands.Bot):
 
 def get_top_stat(stat_dict):
     return max(stat_dict.items(), key=lambda x: x[1])[0]
+
+async def tally_votes(message: discord.Message):
+    votes = {"1️⃣": 0, "2️⃣": 0}
+    for reaction in message.reactions:
+        if reaction.emoji in votes:
+            users = await reaction.users().flatten()
+            votes[reaction.emoji] = len([u for u in users if not u.bot])
+    return votes
+
+def update_stats(g: GameState):
+    # Placeholder for stat updates — customize as needed
+    pass
