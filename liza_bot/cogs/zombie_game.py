@@ -572,12 +572,14 @@ async def setup(bot: commands.Bot):
 def get_top_stat(stat_dict):
     return max(stat_dict.items(), key=lambda x: x[1])[0]
 
-async def tally_votes(message: discord.Message):
+async def tally_votes(message):
     votes = {"1️⃣": 0, "2️⃣": 0}
     for reaction in message.reactions:
         if reaction.emoji in votes:
-            users = await reaction.users().flatten()
-            votes[reaction.emoji] = len([u for u in users if not u.bot])
+            users = [user async for user in reaction.users()]
+            for user in users:
+                if not user.bot:
+                    votes[reaction.emoji] += 1
     return votes
 
 def update_stats(g: GameState):
