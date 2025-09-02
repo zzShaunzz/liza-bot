@@ -42,30 +42,34 @@ def enforce_bullets(text: str) -> list:
     current = ""
 
     for line in lines:
-        stripped = line.strip().strip("•").strip("*")
+        stripped = line.strip().lstrip("•").lstrip("*")
         if not stripped:
             continue
 
-        # If line starts with a bullet, start a new bullet
-        if line.strip().startswith("•") or line.strip().startswith("*"):
+        is_bullet = line.strip().startswith("•") or line.strip().startswith("*")
+        contains_name = any(name in stripped for name in CHARACTER_INFO)
+
+        if is_bullet and ":" in stripped:
+            # New character bullet
             if current:
                 bullets.append(f"• {bold_character_names(current.strip())}")
             current = stripped
+
+        elif current and contains_name:
+            # Continuation of character bullet
+            current += " " + stripped
+
         else:
-            # If current bullet looks like a character line, continue joining
-            if current and any(name in current for name in CHARACTER_INFO):
-                current += " " + stripped
-            else:
-                # Ambient narration — flush current and treat this as standalone
-                if current:
-                    bullets.append(f"• {bold_character_names(current.strip())}")
-                    current = ""
-                bullets.append(f"• {bold_character_names(stripped)}")
+            # Ambient narration or standalone line
+            if current:
+                bullets.append(f"• {bold_character_names(current.strip())}")
+                current = ""
+            bullets.append(stripped)  # no bullet prefix for ambient lines
 
     if current:
         bullets.append(f"• {bold_character_names(current.strip())}")
 
-    # Add spacing between bullets
+    # Add spacing between bullets and narration
     spaced = []
     for b in bullets:
         spaced.append(b)
@@ -290,6 +294,7 @@ def build_scene_prompt():
 
     return (
         "You are a text-only assistant. Do not generate or suggest images under any circumstances. "
+        "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. Stay fully in-character and in-world."
         "Respond only with narrative, dialogue, and bullet-pointed text.\n\n"
         f"{g.story_context}\n"
         f"🧍 Alive: {', '.join([bold_name(n) for n in g.alive])}\n"
@@ -312,7 +317,9 @@ def build_health_prompt():
         f"{g.story_context}\n"
         f"🧍 Alive: {', '.join(g.alive)}\n\n"
         "🧠 For each character, describe their physical condition in 2–3 words. "
+        "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. Stay fully in-character and in-world."
         "Format each as a bullet point using •."
+        "After the bullets, describe the ambient atmosphere in a brief sentence. Do not merge character traits with narration."
     )
 
 def build_group_dynamics_prompt():
