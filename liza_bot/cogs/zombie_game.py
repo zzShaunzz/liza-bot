@@ -21,64 +21,60 @@ def bold_name(name: str) -> str:
 
 def bold_character_names(text: str) -> str:
     for name in CHARACTER_INFO:
+        parts = name.split()
+        for part in parts:
+            # Skip if already bolded
+            text = re.sub(
+                rf"(?<!\*)\b({re.escape(part)})\b(?!\*)",
+                r"**\1**",
+                text
+            )
         # Bold full name
         text = re.sub(
-            rf"\b({re.escape(name)})\b",
+            rf"(?<!\*)\b({re.escape(name)})\b(?!\*)",
             r"**\1**",
             text
         )
-        # Bold possessive form like Shaun's
+        # Bold possessive form
         text = re.sub(
-            rf"\b({re.escape(name)})'s\b",
+            rf"(?<!\*)\b({re.escape(name)})'s\b(?!\*)",
             r"**\1**'s",
             text
         )
     return text
 
 def enforce_bullets(text: str) -> list:
-    """Ensure character lines are bullet-formatted and separated from narration."""
+    """Ensure bullet formatting with spacing and bolded names."""
     lines = text.splitlines()
     bullets = []
     current = ""
 
     for line in lines:
-        stripped = line.strip()
+        stripped = line.strip().lstrip("•").lstrip("*")
         if not stripped:
             continue
 
-        contains_name = any(name in stripped for name in CHARACTER_INFO)
-        is_bullet = stripped.startswith("•") or stripped.startswith("*")
+        contains_name = any(name.split()[0] in stripped for name in CHARACTER_INFO)
+        is_bullet = line.strip().startswith("•") or line.strip().startswith("*")
 
-        if is_bullet and ":" in stripped:
-            if current:
-                bullets.append(f"• {bold_character_names(current.strip())}")
-            current = stripped.lstrip("•*").strip()
-
-        elif contains_name and ":" in stripped:
+        if is_bullet or contains_name:
             if current:
                 bullets.append(f"• {bold_character_names(current.strip())}")
             current = stripped
-
-        elif current and contains_name:
-            current += " " + stripped
-
         else:
-            if current:
-                bullets.append(f"• {bold_character_names(current.strip())}")
-                current = ""
-            bullets.append(stripped)
+            current += " " + stripped
 
     if current:
         bullets.append(f"• {bold_character_names(current.strip())}")
 
-    # Add spacing
+    # Add spacing between bullets
     spaced = []
     for b in bullets:
         spaced.append(b)
         spaced.append("")
 
     return spaced
-
+    
 async def stream_bullets_in_message(
     channel: discord.TextChannel,
     bullets: list,
@@ -330,7 +326,7 @@ def build_group_dynamics_prompt():
     return (
         f"{g.story_context}\n"
         f"🧍 Alive: {', '.join(g.alive)}\n\n"
-        "🧠 Describe the group's emotional state, bonds, and conflicts in bullet points using •."
+        "Summarize the current group dynamics in 3–5 bullet points. Focus only on notable relationship shifts: overall group mood, emerging bonds, and rising tensions. Avoid listing every character. Do not repeat previous dynamics unless they’ve evolved. Keep each bullet short and emotionally resonant."
     )
 
 def build_dilemma_prompt(scene_text, health_text):
