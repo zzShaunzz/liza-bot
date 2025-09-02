@@ -260,8 +260,15 @@ async def start_game_async(user_id: int):
 
 def build_scene_prompt():
     g = active_game
-    traits = "\n".join([f"{bold_name(n)}: {', '.join(CHARACTER_INFO[n]['traits'])}" for n in g.alive])
+
+    traits = "\n".join([
+        f"{bold_name(n)}: {', '.join(CHARACTER_INFO.get(n.strip(), {}).get('traits', ['Unknown']))}"
+        for n in g.alive
+    ])
+
     return (
+        "You are a text-only assistant. Do not generate or suggest images under any circumstances. "
+        "Respond only with narrative, dialogue, and bullet-pointed text.\n\n"
         f"{g.story_context}\n"
         f"🧍 Alive: {', '.join([bold_name(n) for n in g.alive])}\n"
         f"🧠 Traits:\n{traits}\n\n"
