@@ -43,6 +43,10 @@ def bold_character_names(text: str) -> str:
         )
     return text
 
+def format_bullet(text: str) -> str:
+    """Ensure clean bullet formatting without double bullets."""
+    return f"• {text.strip().lstrip('•').strip()}"
+
 def split_into_sentences(text: str) -> list:
     """Split ambient narration into individual sentences."""
     return re.split(r'(?<=[.!?])\s+', text.strip())
@@ -485,7 +489,9 @@ class ZombieGame(commands.Cog):
         if not raw_health:
             await channel.send("⚠️ Health report failed.")
             return
-        health_bullets = enforce_bullets(bold_character_names(raw_health))
+        raw_bolded = bold_character_names(raw_health)
+        enforced = enforce_bullets(raw_bolded)
+        health_bullets = [format_bullet(line) for line in enforce_bullets(raw_bolded)]
         await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**")
         await stream_bullets_in_message(channel, health_bullets, delay=5.0)
 
@@ -501,7 +507,8 @@ class ZombieGame(commands.Cog):
         if not raw_dilemma:
             await channel.send("⚠️ Dilemma generation failed.")
             return
-        dilemma_bullets = enforce_bullets(bold_character_names(raw_dilemma))
+        raw_bolded = bold_character_names(raw_dilemma)
+        dilemma_bullets = [format_bullet(line) for line in enforce_bullets(raw_bolded)]
         await channel.send("━━━━━━━━━━━━━━\n🧠 **Dilemma**")
         await stream_bullets_in_message(channel, dilemma_bullets, delay=5.0)
 
@@ -565,7 +572,13 @@ class ZombieGame(commands.Cog):
         # Send outcome narration
         await channel.send("━━━━━━━━━━━━━━\n🧾 **Outcome**")
         narration_only = re.split(r"Deaths:", raw_outcome, flags=re.IGNORECASE)[0].strip()
-        await channel.send(bold_character_names(narration_only))
+        sentences = re.split(r'(?<=[.!?])\s+', narration_only)
+        bulleted_narration = [f"• {bold_character_names(s.strip())}" for s in sentences if s.strip()]
+
+        for line in bulleted_narration:
+            await channel.send(line)
+            await asyncio.sleep(0.3)
+
         g.story_context += narration_only + "\n"
 
         # Send deaths and survivors
