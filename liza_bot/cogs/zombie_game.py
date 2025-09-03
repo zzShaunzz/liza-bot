@@ -522,6 +522,15 @@ class ZombieGame(commands.Cog):
         raw_bolded = bold_character_names(raw_health)
         enforced = enforce_bullets(raw_bolded)
         
+        cleaned_health_lines = []
+        for line in enforced:
+            if ":" in line:
+                name, status = line.split(":", 1)
+                # Keep only the first sentence or phrase before ambient narration
+                status_clean = status.strip().split(".")[0].split("The ")[0].strip()
+                cleaned_line = f"{name.strip()}: {status_clean}"
+                cleaned_health_lines.append(cleaned_line)
+        
         # Track which characters were mentioned
         reported = set()
         for line in enforced:
@@ -565,7 +574,7 @@ class ZombieGame(commands.Cog):
         
         # Clean and format
         health_bullets = [
-            format_bullet(bold_character_names(line.lstrip("•").strip()))
+            format_bullet(bold_character_names(line))
             for line in cleaned_health_lines
             if line.strip() and line.strip() != "•"
         ]
@@ -674,9 +683,10 @@ class ZombieGame(commands.Cog):
         g.alive = [re.sub(r"^\W+", "", b).strip("*• ").strip() for b in survivors_list if b]
 
         # Send outcome narration
-        await channel.send(f"📘 **Outcome – Round {g.round_number}**")
-        
-        narration_only = re.split(r"Deaths:", raw_outcome, flags=re.IGNORECASE)[0].strip()
+        await channel.send("━━━━━━━━━━━━━━\n📘 **Outcome**")
+        for bullet in bulleted_narration:
+            await channel.send(bullet)
+            await asyncio.sleep(4.0)
         
         # Split narration into clean bullet lines
         sentences = re.split(r'(?<=[.!?])\s+', narration_only)
