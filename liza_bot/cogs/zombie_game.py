@@ -786,6 +786,9 @@ async def setup(bot: commands.Bot):
 
 # Utilities
 def auto_track_stats(text: str, g):
+    if not text:
+        return  # Skip if text is None or empty
+
     for name in CHARACTER_INFO:
         if re.search(rf"{name}.*(help|assist|protect|save)", text, re.IGNORECASE):
             g.stats["helped"][name] += 1
