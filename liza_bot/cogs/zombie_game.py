@@ -712,6 +712,7 @@ class ZombieGame(commands.Cog):
             return
 
         # Continue to next round
+        g.round_number += 1
         await self.run_round(channel)
 
     async def end_summary(self, channel: discord.TextChannel):
