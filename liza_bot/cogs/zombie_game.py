@@ -246,6 +246,7 @@ class GameState:
         self.story_seed = None
         self.story_context = ""  # NEW: accumulates narrative for continuity
         self.terminated = False
+        self.round_number = 1
 
 active_game = None
 
