@@ -324,6 +324,7 @@ def build_scene_prompt():
         "🎬 Continue the story. Include every alive character. "
         "Format each action as a bullet point using •. Keep bullets short and on their own lines."
         "Avoid repeating scenes or plotlines from previous sessions."
+        "Do not list multiple options. Do not use numbered choices. Only continue the story."
     )
 
 def build_scene_summary_prompt(scene_text):
