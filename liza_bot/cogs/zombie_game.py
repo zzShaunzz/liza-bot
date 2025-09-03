@@ -584,7 +584,7 @@ class ZombieGame(commands.Cog):
             ]
         
             await channel.send("💬 **Group Dynamics**")
-            await stream_bullets_in_message(channel, dynamics_bullets, delay=4.5)
+            await stream_bullets_in_message(channel, dynamics_bullets, delay=3.5)
 
         # Phase 4: Dilemma
         raw_dilemma = await generate_dilemma(raw_scene, raw_health, g)
@@ -602,7 +602,7 @@ class ZombieGame(commands.Cog):
             ]
         
             await channel.send(f"🧠 **Dilemma – Round {g.round_number}**")
-            await stream_bullets_in_message(channel, dilemma_bullets, delay=5.0)
+            await stream_bullets_in_message(channel, dilemma_bullets, delay=4.5)
 
         # Phase 5: Choices
         raw_choices = await generate_choices("\n".join(dilemma_bullets))
@@ -617,7 +617,7 @@ class ZombieGame(commands.Cog):
             end_game()
             return
         await channel.send("━━━━━━━━━━━━━━\n🔀 **Choices**")
-        await stream_bullets_in_message(channel, g.options, delay=1.2)
+        await stream_bullets_in_message(channel, g.options, delay=4.0)
 
         # Voting
         choices_msg = await channel.send("🗳️ React to vote!")
