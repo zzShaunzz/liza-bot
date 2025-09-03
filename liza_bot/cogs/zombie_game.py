@@ -236,12 +236,12 @@ class GameState:
         self.options = []
         self.votes = {}
         self.stats = {
-            "helpful": {name: 0 for name in CHARACTERS},
-            "sinister": {name: 0 for name in CHARACTERS},
-            "resourceful": {name: 0 for name in CHARACTERS},
+            "helped": defaultdict(int),
+            "resourceful": defaultdict(int),
+            "sinister": defaultdict(int),
+            "dignified": defaultdict(int),
             "bonds": defaultdict(int),
-            "conflicts": defaultdict(int),
-            "dignified": {name: 100 for name in CHARACTERS}
+            "conflicts": defaultdict(int)
         }
         self.story_seed = None
         self.story_context = ""  # NEW: accumulates narrative for continuity
