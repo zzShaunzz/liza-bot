@@ -371,45 +371,45 @@ def build_choices_prompt(dilemma_text):
 
 # ---------- AI Generators ----------
 
-async def generate_scene():
+async def generate_scene(g):
     raw_scene = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator generating cinematic zombie survival scenes."},
         {"role": "user", "content": build_scene_prompt()}
     ])
-    auto_track_stats(raw_scene)
-    auto_track_relationships(raw_scene)
+    auto_track_stats(raw_scene, g)
+    auto_track_relationships(raw_scene, g)
     return raw_scene
 
 
-async def generate_scene_summary(scene_text):
+async def generate_scene_summary(scene_text, g):
     raw_summary = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator summarizing a zombie survival scene."},
         {"role": "user", "content": build_scene_summary_prompt(scene_text)}
     ], temperature=0.7)
-    auto_track_stats(raw_summary)
+    auto_track_stats(raw_summary, g)
     return raw_summary
 
 
-async def generate_health_report():
+async def generate_health_report(g):
     raw_health = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator generating a health report."},
         {"role": "user", "content": build_health_prompt()}
     ])
-    auto_track_stats(raw_health)
+    auto_track_stats(raw_health, g)
     return raw_health
 
 
-async def generate_group_dynamics():
+async def generate_group_dynamics(g):
     raw_dynamics = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator describing group dynamics."},
         {"role": "user", "content": build_group_dynamics_prompt()}
     ])
-    auto_track_stats(raw_dynamics)
-    auto_track_relationships(raw_dynamics)
+    auto_track_stats(raw_dynamics, g)
+    auto_track_relationships(raw_dynamics, g)
     return raw_dynamics
 
 
-async def generate_dilemma(scene_text, health_text):
+async def generate_dilemma(scene_text, health_text, g):
     raw_dilemma = await generate_ai_text([
         {"role": "system", "content": (
             "You are a horror narrator generating dilemmas for a survival game. "
@@ -418,7 +418,7 @@ async def generate_dilemma(scene_text, health_text):
         )},
         {"role": "user", "content": build_dilemma_prompt(scene_text, health_text)}
     ], temperature=0.9)
-    auto_track_stats(raw_dilemma)
+    auto_track_stats(raw_dilemma, g)
     return raw_dilemma
 
 
@@ -489,7 +489,7 @@ class ZombieGame(commands.Cog):
             return
 
         # Phase 1: Scene
-        raw_scene = await generate_scene()
+        raw_scene = await generate_scene(g)
         if not raw_scene:
             await channel.send("⚠️ Scene generation failed.")
             return
@@ -505,14 +505,14 @@ class ZombieGame(commands.Cog):
         g.story_context = "\n".join(g.story_context.strip().splitlines()[-12:])  # keep last 12 lines
 
         # Phase 2: Summary
-        raw_summary = await generate_scene_summary("\n".join(scene_bullets))
+        raw_summary = await generate_scene_summary("\n".join(scene_bullets), g)
         if raw_summary:
             await channel.send("━━━━━━━━━━━━━━\n📝 **Scene Summary**")
             await channel.send(bold_character_names(raw_summary.strip()))
             g.story_context += f"Summary: {raw_summary.strip()}\n"
 
         # Phase 3: Health
-        raw_health = await generate_health_report()
+        raw_health = await generate_health_report(g)
         if not raw_health:
             await channel.send("⚠️ Health report failed.")
             return
@@ -533,7 +533,7 @@ class ZombieGame(commands.Cog):
                 enforced.append(bold_character_names(f"{name}: *No status reported*"))
         
         # Final formatting: Health Status
-        raw_health = await generate_health_report()
+        raw_health = await generate_health_report(g)
         if not raw_health:
             await channel.send("⚠️ Health report failed.")
             return
@@ -572,7 +572,7 @@ class ZombieGame(commands.Cog):
         await stream_bullets_in_message(channel, health_bullets, delay=2.0)
         
         # Phase 3b: Group Dynamics
-        raw_dynamics = await generate_group_dynamics()
+        raw_dynamics = await generate_group_dynamics(g)
         if raw_dynamics:
             raw_bolded_dynamics = bold_character_names(raw_dynamics)
             enforced_dynamics = enforce_bullets(raw_bolded_dynamics)
@@ -587,7 +587,7 @@ class ZombieGame(commands.Cog):
             await stream_bullets_in_message(channel, dynamics_bullets, delay=4.5)
 
         # Phase 4: Dilemma
-        raw_dilemma = await generate_dilemma(...)
+        raw_dilemma = await generate_dilemma(raw_scene, raw_health, g)
         if raw_dilemma:
             # Filter out choice-related lines
             filtered_lines = [
@@ -784,33 +784,24 @@ async def setup(bot: commands.Bot):
     print("✅ ZombieGame cog loaded")
 
 # Utilities
-def auto_track_stats(text: str):
+def auto_track_stats(text: str, g):
     for name in CHARACTER_INFO:
-        # Helpfulness
-        if re.search(rf"{name}.*(help|assist|support|protect)", text, re.IGNORECASE):
+        if re.search(rf"{name}.*(help|assist|protect|save)", text, re.IGNORECASE):
             g.stats["helped"][name] += 1
-
-        # Resourcefulness
-        if re.search(rf"{name}.*(improvise|craft|solve|navigate|strategize)", text, re.IGNORECASE):
+        if re.search(rf"{name}.*(improvise|solve|navigate|strategize)", text, re.IGNORECASE):
             g.stats["resourceful"][name] += 1
-
-        # Sinister
-        if re.search(rf"{name}.*(betray|sabotage|attack|abandon)", text, re.IGNORECASE):
+        if re.search(rf"{name}.*(betray|attack|abandon|sabotage)", text, re.IGNORECASE):
             g.stats["sinister"][name] += 1
-
-        # Dignified
-        if re.search(rf"{name}.*(grace|calm|sacrifice|honor)", text, re.IGNORECASE):
+        if re.search(rf"{name}.*(grace|sacrifice|honor|calm)", text, re.IGNORECASE):
             g.stats["dignified"][name] += 1
 
-def auto_track_relationships(text: str):
+def auto_track_relationships(text: str, g):
     for name1 in CHARACTER_INFO:
         for name2 in CHARACTER_INFO:
             if name1 == name2:
                 continue
-            # Bonding
             if re.search(rf"{name1}.*(share|nod|exchange|trust).+{name2}", text, re.IGNORECASE):
                 g.stats["bonds"][(name1, name2)] += 1
-            # Conflict
             if re.search(rf"{name1}.*(argue|fight|oppose|resent).+{name2}", text, re.IGNORECASE):
                 g.stats["conflicts"][(name1, name2)] += 1
 
