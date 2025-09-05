@@ -7,8 +7,8 @@ WORKDIR /app
 # Copy all contents of liza_bot/ into the container
 COPY . .
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies, including httpx explicitly
+RUN pip install --no-cache-dir -r requirements.txt httpx
 
 # Optional: set environment variables
 ENV PYTHONUNBUFFERED=1
