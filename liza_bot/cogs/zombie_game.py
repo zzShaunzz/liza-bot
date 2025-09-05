@@ -117,8 +117,8 @@ def bold_character_names(text: str) -> str:
     return text
 
 def format_bullet(text: str) -> str:
-    """Ensure clean bullet formatting without double bullets."""
-    return f"• {text.strip().lstrip('•').strip()}"
+    """Ensure clean bullet formatting without double bullets or dashes."""
+    return f"• {text.strip().lstrip('•-').strip()}"
 
 def split_into_sentences(text: str) -> list:
     """Split ambient narration into individual sentences."""
@@ -758,7 +758,7 @@ class ZombieGame(commands.Cog):
                 await asyncio.sleep(4.0)
         
         # Split narration into clean bullet lines
-        sentences = re.split(r'(?<=[.!?])\s+', narration_only)
+        sentences = re.split(r'(?<=[.!?])\s+', raw_scene)
         bulleted_narration = [
             format_bullet(bold_character_names(s.strip().lstrip("•")))
             for s in sentences
