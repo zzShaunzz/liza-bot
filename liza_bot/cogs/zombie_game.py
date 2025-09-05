@@ -614,13 +614,13 @@ async def generate_choices(dilemma_text):
                 logger.error(f"Failed to generate end summary: {e}")
                 await channel.send("⚠️ Failed to generate end summary.")
 
-    async def run_round(self, channel: discord.TextChannel):
-        g = active_game
-        g.round += 1
+        async def run_round(self, channel: discord.TextChannel):
+            g = active_game
+            g.round += 1
 
-        if g.terminated:
-            await channel.send("🛑 Game has been terminated.")
-            return
+            if g.terminated:
+                await channel.send("🛑 Game has been terminated.")
+                return
 
         # Phase 1: Scene
         raw_scene = await generate_scene(g)
