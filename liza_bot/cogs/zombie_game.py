@@ -1,20 +1,91 @@
+import os
+import re
+import httpx
+import asyncio
+import logging
+import aiohttp
 import discord
+from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
-import os, asyncio, logging, aiohttp, re
-from dotenv import load_dotenv
 from collections import defaultdict
 
-# Logging
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🔧 Logging Setup
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("zombie_game")
 
-# Env vars
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🌱 Environment Variables
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 load_dotenv()
-ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL = os.getenv("MODEL")
 
+ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
+MODEL = os.getenv("MODEL", "openrouter/gpt-4")  # Default fallback
+
+OPENROUTER_API_KEYS = [
+    os.getenv("OPENROUTER_API_KEY_1"),
+    os.getenv("OPENROUTER_API_KEY_2"),
+    os.getenv("OPENROUTER_API_KEY_3"),
+    os.getenv("OPENROUTER_API_KEY_4"),
+    os.getenv("OPENROUTER_API_KEY_5"),
+    os.getenv("OPENROUTER_API_KEY_6"),
+]
+OPENROUTER_API_KEYS = [key for key in OPENROUTER_API_KEYS if key]  # Filter out None
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🧠 OpenRouter Request with Key Rotation
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async def send_openrouter_request(payload):
+    for key in OPENROUTER_API_KEYS:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json"
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=30
+                )
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in [401, 429]:
+                logger.warning(f"Key failed with status {e.response.status_code}, trying next...")
+                continue
+            raise
+    raise RuntimeError("All OpenRouter keys exhausted or invalid.")
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🧠 AI Text Generator
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async def generate_ai_text(messages, temperature=0.8):
+    if active_game and active_game.terminated:
+        return None
+
+    payload = {
+        "model": MODEL,
+        "messages": messages,
+        "temperature": temperature
+    }
+
+    try:
+        response = await send_openrouter_request(payload)
+        content = response.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        if content:
+            logger.info(f"AI returned:\n{content}")
+            return content
+        logger.warning("AI response was empty.")
+    except Exception as e:
+        logger.error(f"AI request error: {type(e).__name__} - {e}")
+
+    logger.error("AI request failed after key rotation.")
+    return None
+    
 # ---------- Formatting ----------
 def bold_name(name: str) -> str:
     return f"**{name}**"
@@ -261,35 +332,25 @@ def is_active():
 async def generate_ai_text(messages, temperature=0.9):
     if active_game and active_game.terminated:
         return None
-    payload = {"model": MODEL, "messages": messages, "temperature": temperature}
-    for attempt in range(3):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                        "Content-Type": "application/json"
-                    },
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=45)
-                ) as response:
-                    if response.status != 200:
-                        logger.error(f"AI request failed with status {response.status}: {await response.text()}")
-                        await asyncio.sleep(2 ** attempt)
-                        continue
-                    data = await response.json()
-                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                    if content:
-                        logger.info(f"AI returned:\n{content}")
-                        return content
-                    logger.warning("AI response was empty.")
-        except Exception as e:
-            logger.error(f"AI request error: {type(e).__name__} - {e}")
-        await asyncio.sleep(2 ** attempt)
-    logger.error("AI request failed after 3 attempts.")
-    return None
 
+    payload = {
+        "model": MODEL,
+        "messages": messages,
+        "temperature": temperature
+    }
+    try:
+        response = await send_openrouter_request(payload)
+        content = response.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        if content:
+            logger.info(f"AI returned:\n{content}")
+            return content
+        logger.warning("AI response was empty.")
+    except Exception as e:
+        logger.error(f"AI request error: {type(e).__name__} - {e}")
+
+    logger.error("AI request failed after key rotation.")
+    return None
+    
 async def generate_unique_setting():
     messages = [
         {"role": "system", "content": "You are a horror storyteller."},
