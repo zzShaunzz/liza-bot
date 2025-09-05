@@ -378,6 +378,7 @@ def build_scene_prompt():
 
     return (
         "You are a text-only assistant. Do not generate or suggest images under any circumstances. "
+        "Entire text length should be able to fit within a Discord message (under 2,000 characters)."
         "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. Stay fully in-character and in-world."
         "The world has fallen to a zombie outbreak. The survivors are hunted, exhausted, and emotionally frayed. Every scene continues their desperate struggle against the undead and each other."
         "Respond only with narrative, dialogue, and bullet-pointed text.\n\n"
@@ -769,6 +770,18 @@ class ZombieGame(commands.Cog):
             for s in sentences
             if s.strip() and s.strip() != "•"
         ]
+
+        cleaned_narration = []
+        for line in bulleted_narration:
+            match = re.search(r"(\*\*.*?\*\*:.*?[a-z])\s+(?=[A-Z])", line)
+            if match:
+                split_index = match.end()
+                cleaned_narration.append(line[:split_index].strip())
+                cleaned_narration.append(line[split_index:].strip())
+            else:
+                cleaned_narration.append(line)
+        
+        bulleted_narration = cleaned_narration        
         
         # Post-process fused descriptor + ambient lines
         cleaned_narration = []
