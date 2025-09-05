@@ -22,7 +22,7 @@ logger = logging.getLogger("zombie_game")
 load_dotenv()
 
 ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
-MODEL = os.getenv("MODEL", "google/gemini-2.5-flash-image-preview:free")  # Default fallback
+MODEL = os.getenv("MODEL")
 
 OPENROUTER_API_KEYS = [
     os.getenv("OPENROUTER_API_KEY_1"),
@@ -876,7 +876,7 @@ def auto_track_relationships(text: str, g):
         for name2 in CHARACTER_INFO:
             if name1 == name2:
                 continue
-            if re.search(rf"{name1}.*(share|nod|exchange|trust).+{name2}", text, re.IGNORECASE):
+           if text and re.search(rf"{name1}.*(share|nod|exchange|trust).+{name2}", text, re.IGNORECASE):re.search(rf"{name1}.*(share|nod|exchange|trust).+{name2}", text, re.IGNORECASE):
                 g.stats["bonds"][(name1, name2)] += 1
             if re.search(rf"{name1}.*(argue|fight|oppose|resent).+{name2}", text, re.IGNORECASE):
                 g.stats["conflicts"][(name1, name2)] += 1
