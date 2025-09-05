@@ -193,6 +193,20 @@ async def stream_bullets_in_message(
                 logger.warning(f"Bullet stream failed: {e}")
                 break
 
+async def game_countdown_message(channel: discord.TextChannel, seconds: int, prefix: str = "", final_message: str = None):
+    try:
+        msg = await channel.send(f"{prefix} {seconds}")
+        for i in range(seconds - 1, 0, -1):
+            if active_game and active_game.terminated:
+                return
+            await asyncio.sleep(1)
+            await msg.edit(content=f"{prefix} {i}")
+        await asyncio.sleep(1)
+        if final_message:
+            await msg.edit(content=final_message)
+    except Exception as e:
+        logger.warning(f"Game countdown failed: {e}")
+
 async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
     for i in range(seconds, 0, -1):
         if active_game and active_game.terminated:
@@ -523,9 +537,7 @@ class ZombieGame(commands.Cog):
             await ctx.send("⚠️ A zombie game is already running.")
             return
         await start_game_async(ctx.author.id)
-        msg = await ctx.send("🧟‍♀️ Zombie survival game starting in...")
-        await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...", final_message="🧟‍♀️ Game loading...")
-        await self.run_round(ctx.channel)
+        await game_countdown_message(ctx.channel, 3, "🧟‍♀️ Zombie survival game starting in...", final_message="🧟‍♀️ Game loading...")
 
     @app_commands.command(name="lizazombie", description="Start a zombie survival game")
     async def lizazombie_slash(self, interaction: discord.Interaction):
