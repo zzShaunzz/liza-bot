@@ -524,8 +524,7 @@ class ZombieGame(commands.Cog):
             return
         await start_game_async(ctx.author.id)
         msg = await ctx.send("🧟‍♀️ Zombie survival game starting in...")
-        await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
-        await msg.edit(content="🧟‍♀️ Game loading...")
+        await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...", final_message="🧟‍♀️ Game loading...")
         await self.run_round(ctx.channel)
 
     @app_commands.command(name="lizazombie", description="Start a zombie survival game")
@@ -579,7 +578,22 @@ class ZombieGame(commands.Cog):
         scene_text = bold_character_names(raw_scene)
         
         # Split scene into sentences and format as bullets
-        sentences = re.split(r'(?<=[.!?])\s+', scene_text)
+
+        # Step 1: Extract quoted blocks
+        quoted_blocks = re.findall(r'“[^”]+”', scene_text)
+        protected_text = scene_text
+        
+        # Step 2: Replace quotes with placeholders
+        for i, quote in enumerate(quoted_blocks):
+            protected_text = protected_text.replace(quote, f"__QUOTE_{i}__")
+        
+        # Step 3: Split remaining text into sentences
+        sentences = re.split(r'(?<=[.!?])\s+', protected_text)
+        
+        # Step 4: Restore quoted blocks
+        for i, sentence in enumerate(sentences):
+            for j, quote in enumerate(quoted_blocks):
+                sentences[i] = sentences[i].replace(f"__QUOTE_{j}__", quote)
         
         scene_bullets = []
         for sentence in sentences:
@@ -803,10 +817,16 @@ class ZombieGame(commands.Cog):
         # Post-process fused descriptor + ambient lines
         cleaned_narration = []
         for line in bulleted_narration:
-            parts = re.split(r"(?<=\*\*.*?\*\*:.*?[a-z])\s+(?=[A-Z])", line, maxsplit=1)
-            cleaned_narration.append(parts[0].strip())
-            if len(parts) > 1:
-                cleaned_narration.append(parts[1].strip())
+            match = re.search(r"(\*\*.*?\*\*:.*?[a-z])\s+(?=[A-Z])", line)
+            if match:
+                split_index = match.end()
+                parts = [line[:split_index].strip(), line[split_index:].strip()]
+            else:
+                parts = [line.strip()]
+            
+            for part in parts:
+                if part:
+                    cleaned_narration.append(part)
         
         bulleted_narration = cleaned_narration
         
