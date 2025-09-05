@@ -872,12 +872,17 @@ def auto_track_stats(text: str, g):
             g.stats["dignified"][name] += 1
 
 def auto_track_relationships(text: str, g):
-    for name1 in CHARACTER_INFO:
-        for name2 in CHARACTER_INFO:
+    if not text:
+        return
+
+    for name1 in g.alive:
+        for name2 in g.alive:
             if name1 == name2:
                 continue
-           if text and re.search(rf"{name1}.*(share|nod|exchange|trust).+{name2}", text, re.IGNORECASE):re.search(rf"{name1}.*(share|nod|exchange|trust).+{name2}", text, re.IGNORECASE):
+
+            if re.search(rf"{name1}.*(share|nod|exchange|trust).+{name2}", text, re.IGNORECASE):
                 g.stats["bonds"][(name1, name2)] += 1
+
             if re.search(rf"{name1}.*(argue|fight|oppose|resent).+{name2}", text, re.IGNORECASE):
                 g.stats["conflicts"][(name1, name2)] += 1
 
