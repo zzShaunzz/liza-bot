@@ -564,7 +564,7 @@ class ZombieGame(commands.Cog):
         for line in enforce_bullets(scene_text)
         if line.strip()
         ]
-        await channel.send(f"━━━━━━━━━━━━━━\n🎭 **Scene {g.round_number}**")
+        await channel.send(f"━━━━━━━━━━━━━━\n🎭 **Scene {g.round_number}**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, scene_bullets, delay=4.7)
         g.story_context += "\n".join(scene_bullets) + "\n"
         g.story_context = "\n".join(g.story_context.strip().splitlines()[-12:])  # keep last 12 lines
@@ -572,7 +572,7 @@ class ZombieGame(commands.Cog):
         # Phase 2: Summary
         raw_summary = await generate_scene_summary("\n".join(scene_bullets), g)
         if raw_summary:
-            await channel.send("━━━━━━━━━━━━━━\n📝 **Scene Summary**")
+            await channel.send("━━━━━━━━━━━━━━\n📝 **Scene Summary**\n━━━━━━━━━━━━━━")
             await channel.send(bold_character_names(raw_summary.strip()))
             g.story_context += f"Summary: {raw_summary.strip()}\n"
 
@@ -642,7 +642,7 @@ class ZombieGame(commands.Cog):
             if line.strip() and line.strip() != "•"
         ]
         
-        await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**\n")
+        await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, health_bullets, delay=2.0)
         
         # Phase 3b: Group Dynamics
@@ -745,18 +745,6 @@ class ZombieGame(commands.Cog):
         g.dead.extend([re.sub(r"^\W+", "", b).strip("*• ").strip() for b in deaths_list if b])
         g.alive = [re.sub(r"^\W+", "", b).strip("*• ").strip() for b in survivors_list if b]
 
-        # Send outcome narration
-        bulleted_narration = []
-        
-        await channel.send("━━━━━━━━━━━━━━\n📘 **Outcome**")
-        
-        if not bulleted_narration:
-            await channel.send("⚠️ No outcome narration was generated.")
-        else:
-            for bullet in bulleted_narration:
-                await channel.send(bullet)
-                await asyncio.sleep(4.0)
-        
         # Split narration into clean bullet lines
         sentences = re.split(r'(?<=[.!?])\s+', raw_scene)
         bulleted_narration = [
@@ -764,6 +752,16 @@ class ZombieGame(commands.Cog):
             for s in sentences
             if s.strip() and s.strip() != "•"
         ]
+        
+        # Send outcome narration
+        await channel.send("━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━")
+        
+        if not bulleted_narration:
+            await channel.send("⚠️ No outcome narration was generated.")
+        else:
+            for bullet in bulleted_narration:
+                await channel.send(bullet)
+                await asyncio.sleep(4.0)
         
         # Stream bullets in a single edited message
         outcome_msg = await channel.send("‎")  # invisible placeholder
@@ -798,7 +796,7 @@ class ZombieGame(commands.Cog):
 
     async def end_summary(self, channel: discord.TextChannel):
         g = active_game
-        await channel.send("━━━━━━━━━━━━━━\n📜 **Game Summary**")
+        await channel.send("━━━━━━━━━━━━━━\n📜 **Game Summary**\n━━━━━━━━━━━━━━")
 
         valid_deaths = [name for name in g.dead if name and name.lower() != "none"]
         deaths_block = [f"• {bold_name(name)}" for name in valid_deaths]
