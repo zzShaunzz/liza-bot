@@ -593,6 +593,8 @@ async def generate_choices(dilemma_text):
                 return
             await ctx.send("🛑 Manually ending the zombie game...")
             active_game.terminated = True
+        
+            g = active_game  # ← Add this line here
             await self.end_summary(ctx.channel, g.story_context)
             end_game()
     
@@ -603,6 +605,8 @@ async def generate_choices(dilemma_text):
                 return
             await interaction.response.send_message("🛑 Manually ending the zombie game...")
             active_game.terminated = True
+        
+            g = active_game  # ← Add this line here
             await self.end_summary(interaction.channel, g.story_context)
             end_game()
     
@@ -617,10 +621,12 @@ async def generate_choices(dilemma_text):
         async def run_round(self, channel: discord.TextChannel):
             g = active_game
             g.round += 1
-
+        
             if g.terminated:
                 await channel.send("🛑 Game has been terminated.")
                 return
+    
+        # Continue with scene generation, narration, etc.
 
         # Phase 1: Scene
         raw_scene = await generate_scene(g)
