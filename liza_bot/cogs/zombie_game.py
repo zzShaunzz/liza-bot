@@ -577,11 +577,23 @@ class ZombieGame(commands.Cog):
             await channel.send("⚠️ Scene generation failed.")
             return
         scene_text = bold_character_names(raw_scene)
-        scene_bullets = [
-        format_bullet(bold_character_names(line.lstrip("•").strip()))
-        for line in enforce_bullets(scene_text)
-        if line.strip()
-        ]
+        
+        # Split scene into sentences and format as bullets
+        sentences = re.split(r'(?<=[.!?])\s+', scene_text)
+        
+        scene_bullets = []
+        for sentence in sentences:
+            if sentence.strip():
+                formatted = format_bullet(bold_character_names(sentence.strip().lstrip("•")))
+                # Split fused descriptor + ambient narration
+                match = re.search(r"(\*\*.*?\*\*:.*?[a-z])\s+(?=[A-Z])", formatted)
+                if match:
+                    split_index = match.end()
+                    scene_bullets.append(formatted[:split_index].strip())
+                    scene_bullets.append(formatted[split_index:].strip())
+                else:
+                    scene_bullets.append(formatted)
+                    
         await channel.send(f"━━━━━━━━━━━━━━\n🎭 **Scene {g.round_number}**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, scene_bullets, delay=4.7)
         g.story_context += "\n".join(scene_bullets) + "\n"
@@ -653,12 +665,17 @@ class ZombieGame(commands.Cog):
             if name not in reported:
                 enforced_health.append(bold_character_names(f"{name}: *No status reported*"))
         
-        # Clean and format
-        health_bullets = [
-            format_bullet(bold_character_names(line))
-            for line in cleaned_health_lines
-            if line.strip() and line.strip() != "•"
-        ]
+        # Format and split fused health lines
+        health_bullets = []
+        for line in cleaned_health_lines:
+            formatted = format_bullet(bold_character_names(line.strip().lstrip("•")))
+            match = re.search(r"(\*\*.*?\*\*:.*?[a-z])\s+(?=[A-Z])", formatted)
+            if match:
+                split_index = match.end()
+                health_bullets.append(formatted[:split_index].strip())
+                health_bullets.append(formatted[split_index:].strip())
+            else:
+                health_bullets.append(formatted)
         
         await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, health_bullets, delay=2.0)
