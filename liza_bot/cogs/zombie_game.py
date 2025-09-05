@@ -445,6 +445,23 @@ async def generate_scene(g):
     auto_track_relationships(raw_scene, g)
     return raw_scene
 
+async def generate_outcome(scene_text, choice_text, g):
+    prompt = (
+        "You are a horror narrator summarizing the consequences of a specific player choice "
+        "in a zombie survival scene. Focus on what happened *because* of the choice. "
+        "Return short, vivid bullet points only. Do not describe images or include voting options.\n\n"
+        f"Scene:\n{scene_text}\n\n"
+        f"Chosen Action:\n{choice_text}"
+    )
+    
+    raw_outcome = await generate_ai_text([
+        {"role": "system", "content": "You are a horror narrator generating outcome consequences."},
+        {"role": "user", "content": prompt}
+    ], temperature=0.8)
+
+    auto_track_stats(raw_outcome, g)
+    auto_track_relationships(raw_outcome, g)
+    return raw_outcome
 
 async def generate_scene_summary(scene_text, g):
     raw_summary = await generate_ai_text([
@@ -746,7 +763,7 @@ class ZombieGame(commands.Cog):
         g.alive = [re.sub(r"^\W+", "", b).strip("*• ").strip() for b in survivors_list if b]
 
         # Split narration into clean bullet lines
-        sentences = re.split(r'(?<=[.!?])\s+', raw_scene)
+        sentences = re.split(r'(?<=[.!?])\s+', raw_outcome)
         bulleted_narration = [
             format_bullet(bold_character_names(s.strip().lstrip("•")))
             for s in sentences
@@ -754,14 +771,18 @@ class ZombieGame(commands.Cog):
         ]
         
         # Send outcome narration
-        await channel.send("━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━")
+        if not bulleted_narration:
+            await channel.send("⚠️ No outcome narration was generated.")
+            return
         
         if not bulleted_narration:
             await channel.send("⚠️ No outcome narration was generated.")
-        else:
-            for bullet in bulleted_narration:
-                await channel.send(bullet)
-                await asyncio.sleep(4.0)
+            return
+        
+        outcome_text = "━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━\n\n"
+        outcome_text += "\n".join(bulleted_narration)
+        
+        await channel.send(outcome_text)
         
         # Stream bullets in a single edited message
         outcome_msg = await channel.send("‎")  # invisible placeholder
@@ -769,7 +790,7 @@ class ZombieGame(commands.Cog):
         for line in bulleted_narration:
             full_text += line + "\n"
             await outcome_msg.edit(content=full_text.strip())
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(4.5)
         
         # Update story context
         g.story_context += narration_only + "\n"
