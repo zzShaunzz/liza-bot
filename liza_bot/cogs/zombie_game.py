@@ -207,6 +207,18 @@ async def game_countdown_message(channel: discord.TextChannel, seconds: int, pre
     except Exception as e:
         logger.warning(f"Game countdown failed: {e}")
 
+async def animate_game_start(message: discord.Message, stop_event: asyncio.Event, base_text: str = "🧟‍♀️ Game is starting"):
+    dots = ["", ".", "..", "..."]
+    i = 0
+    while not stop_event.is_set():
+        try:
+            await message.edit(content=f"{base_text}{dots[i % len(dots)]}")
+            await asyncio.sleep(0.6)
+            i += 1
+        except Exception as e:
+            logger.warning(f"Game start animation failed: {e}")
+            break
+
 async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
     for i in range(seconds, 0, -1):
         if active_game and active_game.terminated:
@@ -533,25 +545,49 @@ class ZombieGame(commands.Cog):
     @commands.command(name="lizazombie")
     async def lizazombie_legacy(self, ctx: commands.Context):
         await ctx.send("✅ Command registered. Preparing zombie survival game...")
+    
         if is_active():
             await ctx.send("⚠️ A zombie game is already running.")
             return
+    
         await start_game_async(ctx.author.id)
-        await game_countdown_message(ctx.channel, 3, "🧟‍♀️ Zombie survival game starting in...", final_message="🧟‍♀️ Game loading...")
+    
+        # Send animated "Game is starting..." message
+        msg = await ctx.send("🧟‍♀️ Game is starting")
+        stop_event = asyncio.Event()
+        animation_task = asyncio.create_task(animate_game_start(msg, stop_event))
+    
+        # Run the first round (includes scene generation)
+        try:
+            await self.run_round(ctx.channel)
+        except Exception as e:
+            logger.error(f"run_round crashed: {e}")
+            await ctx.send("⚠️ Game failed to start.")
+        finally:
+            stop_event.set()
+            await animation_task
 
     @app_commands.command(name="lizazombie", description="Start a zombie survival game")
     async def lizazombie_slash(self, interaction: discord.Interaction):
         await interaction.response.send_message("✅ Command registered. Preparing zombie survival game...", ephemeral=True)
+    
+        # ✅ Use interaction.channel instead of ctx.channel
         if interaction.channel.id != ZOMBIE_CHANNEL_ID:
             await interaction.followup.send("❌ Run this command in the zombie channel.", ephemeral=True)
             return
+    
         if is_active():
             await interaction.followup.send("⚠️ A zombie game is already running.", ephemeral=True)
             return
+    
         await start_game_async(interaction.user.id)
+    
+        # ✅ Send animated countdown message in the correct channel
         msg = await interaction.channel.send("🧟‍♀️ Zombie survival game starting in...")
         await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
         await msg.edit(content="🧟‍♀️ Game loading...")
+    
+        logger.info("✅ Countdown finished. Starting run_round...")
         await self.run_round(interaction.channel)
 
     @commands.command(name="endzombie")
@@ -561,7 +597,7 @@ class ZombieGame(commands.Cog):
             return
         await ctx.send("🛑 Manually ending the zombie game...")
         active_game.terminated = True
-        await self.end_summary(ctx.channel)
+        async def end_summary(self, channel: discord.TextChannel, scene_text: str):
         end_game()
 
     @app_commands.command(name="endzombie", description="Manually end the zombie game")
@@ -571,7 +607,7 @@ class ZombieGame(commands.Cog):
             return
         await interaction.response.send_message("🛑 Manually ending the zombie game...")
         active_game.terminated = True
-        await self.end_summary(interaction.channel)
+        await self.end_summary(ctx.channel)
         end_game()
 
     async def run_round(self, channel: discord.TextChannel):
