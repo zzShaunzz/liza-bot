@@ -22,7 +22,7 @@ logger = logging.getLogger("zombie_game")
 load_dotenv()
 
 ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
-MODEL = os.getenv("MODEL", "openrouter/gpt-4")  # Default fallback
+MODEL = os.getenv("MODEL", "google/gemini-2.5-flash-image-preview:free")  # Default fallback
 
 OPENROUTER_API_KEYS = [
     os.getenv("OPENROUTER_API_KEY_1"),
