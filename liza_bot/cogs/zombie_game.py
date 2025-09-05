@@ -212,42 +212,42 @@ async def countdown_message(message: discord.Message, seconds: int, prefix: str 
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
         "age": 15, "gender": "Male",
-        "traits": ["quick planner", "boxing experience", "fast", "heat-sensitive", "pattern-adapter"],
+        "traits": ["empathetic", "stubborn", "agile", "semi-reserved", "improviser"],
         "siblings": ["Addison Sadsarin"],
         "likely_pairs": ["Addison Sadsarin", "Aiden Muy", "Gabe Muy", "Dylan Pastorin"],
         "likely_conflicts": ["Jordan"]
     },
     "Addison Sadsarin": {
         "age": 16, "gender": "Female",
-        "traits": ["kind", "patient", "versatile", "physically weak", "slow decision-maker"],
+        "traits": ["kind", "patient", "responsible", "lacks physicality", "semi-obstinate"],
         "siblings": ["Shaun Sadsarin"],
-        "likely_pairs": ["Shaun Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
+        "likely_pairs": ["Kate Nainggolan", "Jill Nainggolan", "Shaun Sadsarin", "Vivian Muy"],
         "likely_conflicts": ["Dylan Pastorin"]
     },
     "Dylan Pastorin": {
         "age": 21, "gender": "Male",
-        "traits": ["mentally brave", "protective", "smart with firearms", "slow mover", "manipulation-prone", "extroverted"],
+        "traits": ["confident", "skilled driver", "brash", "slow", "semi-manipulable", "extrovert"],
         "siblings": [],
         "likely_pairs": ["Noah Nainggolan", "Gabe Muy", "Shaun Sadsarin", "Vivian Muy"],
         "likely_conflicts": ["Kate Nainggolan"]
     },
     "Noah Nainggolan": {
         "age": 18, "gender": "Male",
-        "traits": ["physically capable", "fighter", "not a planner"],
+        "traits": ["spontaneous", "weeaboo", "semi-aloof", "brawler"],
         "siblings": ["Kate Nainggolan", "Jill Nainggolan"],
         "likely_pairs": ["Gabe Muy", "Jill Nainggolan", "Kate Nainggolan", "Dylan Pastorin"],
         "likely_conflicts": ["Jill Nainggolan"]
     },
     "Jill Nainggolan": {
         "age": 16, "gender": "Female",
-        "traits": ["conniving", "lucky", "swimmer"],
+        "traits": ["conniving", "demure", "mellow", "swimmer"],
         "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
         "likely_conflicts": ["Noah Nainggolan"]
     },
     "Kate Nainggolan": {
         "age": 14, "gender": "Female",
-        "traits": ["manipulative", "quick-witted", "enduring", "persuasive"],
+        "traits": ["cheeky", "manipulative", "bold", "persuasive"],
         "siblings": ["Jill Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
         "likely_conflicts": ["Aiden Muy"]
@@ -261,14 +261,14 @@ CHARACTER_INFO = {
     },
     "Gabe Muy": {
         "age": 17, "gender": "Male",
-        "traits": ["wrestler", "peacekeeper", "withdraws under pressure", "on the smaller side"],
+        "traits": ["wrestler", "peacekeeper", "withdraws under pressure", "light-weight"],
         "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
         "likely_conflicts": ["Addison Sadsarin"]
     },
     "Aiden Muy": {
         "age": 14, "gender": "Male",
-        "traits": ["agile", "crafty", "chef", "mental reader"],
+        "traits": ["crafty", "short", "observant", "chef"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
         "likely_conflicts": ["Ella Muy"]
@@ -770,29 +770,30 @@ class ZombieGame(commands.Cog):
             if s.strip() and s.strip() != "•"
         ]
         
+        # Post-process fused descriptor + ambient lines
+        cleaned_narration = []
+        for line in bulleted_narration:
+            parts = re.split(r"(?<=\*\*.*?\*\*:.*?[a-z])\s+(?=[A-Z])", line, maxsplit=1)
+            cleaned_narration.append(parts[0].strip())
+            if len(parts) > 1:
+                cleaned_narration.append(parts[1].strip())
+        
+        bulleted_narration = cleaned_narration
+        
         # Send outcome narration
         if not bulleted_narration:
             await channel.send("⚠️ No outcome narration was generated.")
             return
         
-        if not bulleted_narration:
-            await channel.send("⚠️ No outcome narration was generated.")
-            return
-        
-        outcome_text = "━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━\n\n"
-        outcome_text += "\n".join(bulleted_narration)
-        
-        await channel.send(outcome_text)
-        
-        # Stream bullets in a single edited message
         outcome_msg = await channel.send("‎")  # invisible placeholder
-        full_text = ""
+        full_text = "━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━\n\n"
         for line in bulleted_narration:
             full_text += line + "\n"
             await outcome_msg.edit(content=full_text.strip())
             await asyncio.sleep(4.5)
         
         # Update story context
+        narration_only = raw_scene
         g.story_context += narration_only + "\n"
 
         # Send deaths and survivors
