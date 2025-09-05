@@ -92,26 +92,28 @@ def bold_name(name: str) -> str:
 
 def bold_character_names(text: str) -> str:
     for name in CHARACTER_INFO:
-        parts = name.split()
-        for part in parts:
-            # Bold first names (e.g. "Kate") if not already bolded
-            text = re.sub(
-                rf"(?<!\*)\b({re.escape(part)})\b(?!\*)",
-                r"**\1**",
-                text
-            )
-        # Bold full names (e.g. "Kate Nainggolan")
-        text = re.sub(
-            rf"(?<!\*)\b({re.escape(name)})\b(?!\*)",
-            r"**\1**",
-            text
-        )
-        # Bold possessives (e.g. "Kate's")
+        # Bold possessives first (e.g. "Kate's")
         text = re.sub(
             rf"(?<!\*)\b({re.escape(name)})'s\b(?!\*)",
             r"**\1**'s",
             text
         )
+
+        # Bold full name (e.g. "Kate Nainggolan")
+        text = re.sub(
+            rf"(?<!\*)\b({re.escape(name)})\b(?!\*)",
+            r"**\1**",
+            text
+        )
+
+        # Bold first name only if not already bolded
+        first_name = name.split()[0]
+        text = re.sub(
+            rf"(?<!\*)\b({re.escape(first_name)})\b(?!\*)",
+            r"**\1**",
+            text
+        )
+
     return text
 
 def format_bullet(text: str) -> str:
@@ -411,7 +413,7 @@ def build_group_dynamics_prompt():
     return (
         f"{g.story_context}\n"
         f"🧍 Alive: {', '.join(g.alive)}\n\n"
-        "Summarize the current group dynamics in 3–5 bullet points. Focus only on notable relationship shifts: overall group mood, emerging bonds, and rising tensions. Avoid listing every character. Do not repeat previous dynamics unless they’ve evolved. Keep each bullet short and emotionally resonant."
+        "Summarize the current group dynamics in 3–5 bullet points. Focus only on notable relationship shifts: emerging bonds and rising tensions. Avoid listing every character. Do not repeat previous dynamics unless they’ve evolved. Keep each bullet short and emotionally resonant."
     )
 
 def build_dilemma_prompt(scene_text, health_text):
@@ -563,7 +565,7 @@ class ZombieGame(commands.Cog):
         if line.strip()
         ]
         await channel.send(f"━━━━━━━━━━━━━━\n🎭 **Scene {g.round_number}**")
-        await stream_bullets_in_message(channel, scene_bullets, delay=4.5)
+        await stream_bullets_in_message(channel, scene_bullets, delay=4.7)
         g.story_context += "\n".join(scene_bullets) + "\n"
         g.story_context = "\n".join(g.story_context.strip().splitlines()[-12:])  # keep last 12 lines
 
@@ -640,7 +642,7 @@ class ZombieGame(commands.Cog):
             if line.strip() and line.strip() != "•"
         ]
         
-        await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**")
+        await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**\n")
         await stream_bullets_in_message(channel, health_bullets, delay=2.0)
         
         # Phase 3b: Group Dynamics
@@ -655,7 +657,7 @@ class ZombieGame(commands.Cog):
                 if line.strip() and line.strip() != "•"
             ]
         
-            await channel.send("💬 **Group Dynamics**")
+            await channel.send("━━━━━━━━━━━━━━\n💬 **Group Dynamics**")
             await stream_bullets_in_message(channel, dynamics_bullets, delay=3.5)
 
         # Phase 4: Dilemma
@@ -673,8 +675,8 @@ class ZombieGame(commands.Cog):
                 if line.strip() and line.strip() != "•"
             ]
         
-            await channel.send(f"🧠 **Dilemma – Round {g.round_number}**")
-            await stream_bullets_in_message(channel, dilemma_bullets, delay=4.5)
+            await channel.send(f"━━━━━━━━━━━━━━\n🧠 **Dilemma – Round {g.round_number}**")
+            await stream_bullets_in_message(channel, dilemma_bullets, delay=5.0)
 
         # Phase 5: Choices
         raw_choices = await generate_choices("\n".join(dilemma_bullets))
@@ -689,7 +691,7 @@ class ZombieGame(commands.Cog):
             end_game()
             return
         await channel.send("━━━━━━━━━━━━━━\n🔀 **Choices**")
-        await stream_bullets_in_message(channel, g.options, delay=4.0)
+        await stream_bullets_in_message(channel, g.options, delay=4.5)
 
         # Voting
         choices_msg = await channel.send("🗳️ React to vote!")
@@ -744,10 +746,16 @@ class ZombieGame(commands.Cog):
         g.alive = [re.sub(r"^\W+", "", b).strip("*• ").strip() for b in survivors_list if b]
 
         # Send outcome narration
+        bulleted_narration = []
+        
         await channel.send("━━━━━━━━━━━━━━\n📘 **Outcome**")
-        for bullet in bulleted_narration:
-            await channel.send(bullet)
-            await asyncio.sleep(4.0)
+        
+        if not bulleted_narration:
+            await channel.send("⚠️ No outcome narration was generated.")
+        else:
+            for bullet in bulleted_narration:
+                await channel.send(bullet)
+                await asyncio.sleep(4.0)
         
         # Split narration into clean bullet lines
         sentences = re.split(r'(?<=[.!?])\s+', narration_only)
