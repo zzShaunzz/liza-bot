@@ -356,7 +356,7 @@ async def animate_game_start(message: discord.Message, stop_event: asyncio.Event
             logger.warning(f"Game start animation failed: {e}")
             break
 
-async def countdown_message(message: discord.Message, seconds: int, prefix: str = ""):
+async def countdown_message(message: discord.Message, seconds: int, prefix: str = "", final_text: str = None):
     for i in range(seconds, 0, -1):
         if active_game and active_game.terminated:
             return
@@ -366,10 +366,11 @@ async def countdown_message(message: discord.Message, seconds: int, prefix: str 
         except Exception as e:
             logger.warning(f"Countdown failed: {e}")
             break
-    try:
-        await message.edit(content="✅ Voting has ended!")
-    except Exception as e:
-        logger.warning(f"Final edit failed: {e}")
+    if final_text:
+        try:
+            await message.edit(content=final_text)
+        except Exception as e:
+            logger.warning(f"Final edit failed: {e}")
 
 # ---------- Prompt Builders ----------
 
@@ -674,6 +675,7 @@ class ZombieGame(commands.Cog):
 
         cleaned_health_lines = []
         cleaned_health_lines = []
+        
         for line in enforced_health:
             if ":" in line:
                 name, status = line.split(":", 1)
@@ -684,7 +686,7 @@ class ZombieGame(commands.Cog):
         
                 if len(status_parts) > 1:
                     ambient = status_parts[1].strip()
-                    cleaned_health_lines.append(ambient)
+                    ambient_lines.append(ambient)
 
         reported = set()
         for line in enforced_health:
@@ -827,6 +829,7 @@ class ZombieGame(commands.Cog):
         survivors_match = re.search(r"Survivors:\s*(.*)", raw_outcome, re.DOTALL | re.IGNORECASE)
         
         # Ensure bulleted_narration exists before using it
+
         sentences = re.split(r'(?<=[.!?])\s+', raw_outcome)
         bulleted_narration = [
             format_bullet(bold_character_names(s.strip().lstrip("•")))
