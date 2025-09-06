@@ -601,9 +601,10 @@ class ZombieGame(commands.Cog):
             return
         scene_text = bold_character_names(raw_scene)
 
-        # Protect quoted blocks
+        # Protect quoted blocks — merge multi-line quotes
         merged_lines = []
         buffer = ""
+        
         for line in scene_text.splitlines():
             stripped = line.strip()
             if stripped.startswith('"') and not stripped.endswith(('"', '.', '!', '?')):
@@ -619,17 +620,37 @@ class ZombieGame(commands.Cog):
                 merged_lines.append(stripped)
         
         scene_text = " ".join(merged_lines)
+        
+        # Split into sentences
         sentences = re.split(r'(?<=[.!?])\s+', scene_text)
-
-        scene_bullets = []
+        
+        # Format bullets
+        scene_bullets = [
+            format_bullet(bold_character_names(s.strip().lstrip("•")))
+            for s in sentences
+            if s.strip() and s.strip() != "•"
+        ]
+        
+        # Fuse quote bullets with speaker actions
+        fused_bullets = []
         buffer = ""
         
-        for sentence in sentences:
-            stripped = sentence.strip()
-            if not stripped:
+        for line in scene_bullets:
+            stripped = line.strip()
+            if stripped.startswith('"') and not stripped.endswith(('"', '.', '!', '?')):
+                buffer = stripped
                 continue
+            elif buffer:
+                buffer += " " + stripped
+                if stripped.endswith(('"', '.', '!', '?')):
+                    if fused_bullets:
+                        fused_bullets[-1] += f" {buffer}"
+                    buffer = ""
+                continue
+            else:
+                fused_bullets.append(stripped)
         
-            formatted = format_bullet(bold_character_names(stripped.lstrip("•")))
+        scene_bullets = fused_bullets
         
             # Merge quotes with previous bullet
             if stripped.startswith('"') and not stripped.endswith(('"', '.', '!', '?')):
@@ -676,9 +697,25 @@ class ZombieGame(commands.Cog):
         cleaned_health_lines = []
         cleaned_health_lines = []
         
+        buffer = ""
+        
         for line in enforced_health:
-            if ":" in line:
-                name, status = line.split(":", 1)
+            stripped = line.strip()
+        
+            # If line ends with colon, it's a name waiting for descriptor
+            if stripped.endswith(":"):
+                buffer = stripped
+                continue
+        
+            # If buffer is active, merge with descriptor
+            elif buffer:
+                cleaned_health_lines.append(f"{buffer} {stripped}")
+                buffer = ""
+                continue
+        
+            # If line contains both name and descriptor
+            elif ":" in stripped:
+                name, status = stripped.split(":", 1)
                 status_parts = re.split(r'(?<=[a-z])\s+(?=[A-Z])', status.strip(), maxsplit=1)
                 descriptor = status_parts[0].strip()
                 cleaned_line = f"{name.strip()}: {descriptor}"
@@ -687,6 +724,10 @@ class ZombieGame(commands.Cog):
                 if len(status_parts) > 1:
                     ambient = status_parts[1].strip()
                     ambient_lines.append(ambient)
+        
+            # If it's ambient narration without a name
+            else:
+                ambient_lines.append(stripped)
 
         reported = set()
         for line in enforced_health:
@@ -698,16 +739,11 @@ class ZombieGame(commands.Cog):
             if name not in reported:
                 enforced_health.append(bold_character_names(f"{name}: *No status reported*"))
 
-        health_bullets = []
-        for line in cleaned_health_lines:
-            formatted = format_bullet(bold_character_names(line.strip().lstrip("•")))
-            match = re.search(r"(\*\*.*?\*\*:.*?)(?=\s+[A-Z])", formatted)
-            if match:
-                split_index = match.end()
-                health_bullets.append(formatted[:split_index].strip())
-                health_bullets.append(formatted[split_index:].strip())
-            else:
-                health_bullets.append(formatted)
+        health_bullets = [
+            format_bullet(bold_character_names(line.strip().lstrip("•")))
+            for line in cleaned_health_lines + ambient_lines
+            if line.strip()
+        ]
 
         await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, health_bullets, delay=2.0)
@@ -911,10 +947,20 @@ class ZombieGame(commands.Cog):
 
         outcome_msg = await channel.send("‎")
         full_text = "━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━\n\n"
+        chunk_limit = 1900  # buffer for formatting
+        
         for line in bulleted_narration:
-            full_text += line + "\n\n"
+            next_line = line + "\n\n"
+            if len(full_text) + len(next_line) > chunk_limit:
+                await outcome_msg.edit(content=full_text.strip())
+                await asyncio.sleep(4.5)
+                full_text = next_line
+            else:
+                full_text += next_line
+        
+        # Final flush
+        if full_text.strip():
             await outcome_msg.edit(content=full_text.strip())
-            await asyncio.sleep(4.5)
 
         narration_only = raw_scene
         g.story_context += narration_only + "\n"
