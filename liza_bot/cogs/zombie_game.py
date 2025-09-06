@@ -119,7 +119,7 @@ CHARACTER_INFO = {
     },
     "Dylan Pastorin": {
         "age": 21, "gender": "Male",
-        "traits": ["confident", "skilled driver", "brash", "slow", "semi-manipulable", "extrovert"],
+        "traits": ["confident", "wannabe-gunner", "brash", "slow", "semi-manipulable", "extrovert"],
         "siblings": [],
         "likely_pairs": ["Noah Nainggolan", "Gabe Muy", "Shaun Sadsarin", "Vivian Muy"],
         "likely_conflicts": ["Kate Nainggolan"]
@@ -607,7 +607,7 @@ class ZombieGame(commands.Cog):
         
         for line in scene_text.splitlines():
             stripped = line.strip()
-            if stripped.startswith('"') and not stripped.endswith(('"', '.', '!', '?')):
+            if stripped.startswith('"') or (buffer and not stripped.endswith(('"', '.', '!', '?'))):
                 buffer = stripped
                 continue
             elif buffer:
@@ -637,7 +637,7 @@ class ZombieGame(commands.Cog):
         
         for line in scene_bullets:
             stripped = line.strip()
-            if stripped.startswith('"') and not stripped.endswith(('"', '.', '!', '?')):
+            if stripped.startswith('"') or (buffer and not stripped.endswith(('"', '.', '!', '?'))):
                 buffer = stripped
                 continue
             elif buffer:
@@ -658,7 +658,7 @@ class ZombieGame(commands.Cog):
         
         for line in scene_text.splitlines():
             stripped = line.strip()
-            if stripped.startswith('"') and not stripped.endswith(('"', '.', '!', '?')):
+            if stripped.startswith('"') or (buffer and not stripped.endswith(('"', '.', '!', '?'))):
                 buffer = stripped
                 continue
             elif buffer:
@@ -688,7 +688,7 @@ class ZombieGame(commands.Cog):
         
         for line in scene_bullets:
             stripped = line.strip()
-            if stripped.startswith('"') and not stripped.endswith(('"', '.', '!', '?')):
+            if stripped.startswith('"') or (buffer and not stripped.endswith(('"', '.', '!', '?'))):
                 buffer = stripped
                 continue
             elif buffer:
@@ -746,6 +746,23 @@ class ZombieGame(commands.Cog):
                 buffer = ""
                 continue
         
+        # Parse enforced health lines
+        cleaned_health_lines = []
+        
+        for line in enforced_health:
+            stripped = line.strip()
+        
+            # If line ends with colon, it's a name waiting for descriptor
+            if stripped.endswith(":"):
+                buffer = stripped
+                continue
+        
+            # If buffer is active, merge with descriptor
+            elif buffer:
+                cleaned_health_lines.append(f"{buffer} {stripped}")
+                buffer = ""
+                continue
+        
             # If line contains both name and descriptor
             elif ":" in stripped:
                 name, status = stripped.split(":", 1)
@@ -754,27 +771,31 @@ class ZombieGame(commands.Cog):
                 cleaned_line = f"{name.strip()}: {descriptor}"
                 cleaned_health_lines.append(cleaned_line)
         
+                # If there's ambient narration, merge it into the same line
                 if len(status_parts) > 1:
                     ambient = status_parts[1].strip()
-                    ambient_lines.append(ambient)
+                    cleaned_health_lines.append(ambient)
         
             # If it's ambient narration without a name
             else:
-                ambient_lines.append(stripped)
-
+                cleaned_health_lines.append(stripped)
+        
+        # Track which characters were reported
         reported = set()
         for line in enforced_health:
             for name in CHARACTER_INFO:
                 if name in line:
                     reported.add(name)
-
+        
+        # Add missing characters with fallback status
         for name in CHARACTER_INFO:
             if name not in reported:
                 enforced_health.append(bold_character_names(f"{name}: *No status reported*"))
-
+        
+        # Format health bullets
         health_bullets = [
             format_bullet(bold_character_names(line.strip().lstrip("•")))
-            for line in cleaned_health_lines + ambient_lines
+            for line in cleaned_health_lines
             if line.strip()
         ]
 
