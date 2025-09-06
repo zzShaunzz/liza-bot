@@ -652,29 +652,62 @@ class ZombieGame(commands.Cog):
         
         scene_bullets = fused_bullets
         
-            # Merge quotes with previous bullet
+        # Merge multi-line quotes before sentence splitting
+        merged_lines = []
+        buffer = ""
+        
+        for line in scene_text.splitlines():
+            stripped = line.strip()
             if stripped.startswith('"') and not stripped.endswith(('"', '.', '!', '?')):
                 buffer = stripped
                 continue
             elif buffer:
                 buffer += " " + stripped
                 if stripped.endswith(('"', '.', '!', '?')):
-                    if scene_bullets:
-                        scene_bullets[-1] += f" {buffer}"
+                    merged_lines.append(buffer)
                     buffer = ""
                 continue
-        
-            # Split fused descriptor + ambient narration
-            match = re.search(r"(\*\*.*?\*\*:.*?)(?=\s+[A-Z])", formatted)
-            if match:
-                split_index = match.end()
-                scene_bullets.append(formatted[:split_index].strip())
-                scene_bullets.append(formatted[split_index:].strip())
             else:
-                scene_bullets.append(formatted)
-
+                merged_lines.append(stripped)
+        
+        scene_text = " ".join(merged_lines)
+        
+        # Split into sentences
+        sentences = re.split(r'(?<=[.!?])\s+', scene_text)
+        
+        # Format bullets
+        scene_bullets = [
+            format_bullet(bold_character_names(s.strip().lstrip("•")))
+            for s in sentences
+            if s.strip() and s.strip() != "•"
+        ]
+        
+        # Fuse quote bullets with speaker actions
+        fused_bullets = []
+        buffer = ""
+        
+        for line in scene_bullets:
+            stripped = line.strip()
+            if stripped.startswith('"') and not stripped.endswith(('"', '.', '!', '?')):
+                buffer = stripped
+                continue
+            elif buffer:
+                buffer += " " + stripped
+                if stripped.endswith(('"', '.', '!', '?')):
+                    if fused_bullets:
+                        fused_bullets[-1] += f" {buffer}"
+                    buffer = ""
+                continue
+            else:
+                fused_bullets.append(stripped)
+        
+        scene_bullets = fused_bullets
+        
+        # Stream scene bullets
         await channel.send(f"━━━━━━━━━━━━━━\n🎭 **Scene {g.round_number}**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, scene_bullets, delay=4.7)
+        
+        # Update story context
         g.story_context += "\n".join(scene_bullets) + "\n"
         g.story_context = "\n".join(g.story_context.strip().splitlines()[-12:])  # keep last 12 lines
 
