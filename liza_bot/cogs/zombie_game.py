@@ -607,7 +607,12 @@ class ZombieGame(commands.Cog):
         
         for line in scene_text.splitlines():
             stripped = line.strip()
-            if stripped.startswith('"') or (buffer and not stripped.endswith(('"', '.', '!', '?'))):
+            if stripped.startswith('"') or quote_buffer:
+                quote_buffer += (" " if quote_buffer else "") + stripped
+                if stripped.endswith('"') or stripped.endswith(('.', '!', '?')):
+                    merged_lines.append(quote_buffer.strip())
+                    quote_buffer = ""
+                continue
                 buffer = stripped
                 continue
             elif buffer:
@@ -637,7 +642,12 @@ class ZombieGame(commands.Cog):
         
         for line in scene_bullets:
             stripped = line.strip()
-            if stripped.startswith('"') or (buffer and not stripped.endswith(('"', '.', '!', '?'))):
+            if stripped.startswith('"') or quote_buffer:
+                quote_buffer += (" " if quote_buffer else "") + stripped
+                if stripped.endswith('"') or stripped.endswith(('.', '!', '?')):
+                    merged_lines.append(quote_buffer.strip())
+                    quote_buffer = ""
+                continue
                 buffer = stripped
                 continue
             elif buffer:
@@ -654,21 +664,23 @@ class ZombieGame(commands.Cog):
         
         # Merge multi-line quotes before sentence splitting
         merged_lines = []
-        buffer = ""
+        quote_buffer = ""
         
         for line in scene_text.splitlines():
             stripped = line.strip()
-            if stripped.startswith('"') or (buffer and not stripped.endswith(('"', '.', '!', '?'))):
-                buffer = stripped
+        
+            # Start or continue a quote block
+            if stripped.startswith('"') or quote_buffer:
+                quote_buffer += (" " if quote_buffer else "") + stripped
+        
+                # End quote block if line ends with punctuation or closing quote
+                if stripped.endswith('"') or stripped.endswith(('.', '!', '?')):
+                    merged_lines.append(quote_buffer.strip())
+                    quote_buffer = ""
                 continue
-            elif buffer:
-                buffer += " " + stripped
-                if stripped.endswith(('"', '.', '!', '?')):
-                    merged_lines.append(buffer)
-                    buffer = ""
-                continue
-            else:
-                merged_lines.append(stripped)
+        
+            # Regular line
+            merged_lines.append(stripped)
         
         scene_text = " ".join(merged_lines)
         
@@ -713,10 +725,14 @@ class ZombieGame(commands.Cog):
 
         # Phase 2: Summary
         raw_summary = await generate_scene_summary("\n".join(scene_bullets), g)
-        if raw_summary:
-            await channel.send("━━━━━━━━━━━━━━\n📝 **Scene Summary**\n━━━━━━━━━━━━━━")
-            await channel.send(bold_character_names(raw_summary.strip()))
-            g.story_context += f"Summary: {raw_summary.strip()}\n"
+        
+        if not raw_summary:
+            await channel.send("⚠️ No summary was generated.")
+            return
+        
+        await channel.send("━━━━━━━━━━━━━━\n📝 **Scene Summary**\n━━━━━━━━━━━━━━")
+        await channel.send(bold_character_names(raw_summary.strip()))
+        g.story_context += f"Summary: {raw_summary.strip()}\n"
 
         # Phase 3: Health
         raw_health = await generate_health_report(g)
