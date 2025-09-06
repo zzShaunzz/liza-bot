@@ -601,14 +601,24 @@ class ZombieGame(commands.Cog):
         scene_text = bold_character_names(raw_scene)
 
         # Protect quoted blocks
-        quoted_blocks = re.findall(r'“[^”]+”', scene_text)
-        protected_text = scene_text
-        for i, quote in enumerate(quoted_blocks):
-            protected_text = protected_text.replace(quote, f"__QUOTE_{i}__")
-        sentences = re.split(r'(?<=[.!?])\s+', protected_text)
-        for i, sentence in enumerate(sentences):
-            for j, quote in enumerate(quoted_blocks):
-                sentences[i] = sentences[i].replace(f"__QUOTE_{j}__", quote)
+        merged_lines = []
+        buffer = ""
+        for line in scene_text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith('"') and not stripped.endswith(('"', '.', '!', '?')):
+                buffer = stripped
+                continue
+            elif buffer:
+                buffer += " " + stripped
+                if stripped.endswith(('"', '.', '!', '?')):
+                    merged_lines.append(buffer)
+                    buffer = ""
+                continue
+            else:
+                merged_lines.append(stripped)
+        
+        scene_text = " ".join(merged_lines)
+        sentences = re.split(r'(?<=[.!?])\s+', scene_text)
 
         scene_bullets = []
         buffer = ""
@@ -663,11 +673,18 @@ class ZombieGame(commands.Cog):
         enforced_health = enforce_bullets(raw_bolded_health)
 
         cleaned_health_lines = []
+        cleaned_health_lines = []
         for line in enforced_health:
             if ":" in line:
                 name, status = line.split(":", 1)
-                cleaned_line = f"{name.strip()}: {status.strip().split('.')[0]}"
+                status_parts = re.split(r'(?<=[a-z])\s+(?=[A-Z])', status.strip(), maxsplit=1)
+                descriptor = status_parts[0].strip()
+                cleaned_line = f"{name.strip()}: {descriptor}"
                 cleaned_health_lines.append(cleaned_line)
+        
+                if len(status_parts) > 1:
+                    ambient = status_parts[1].strip()
+                    cleaned_health_lines.append(ambient)
 
         reported = set()
         for line in enforced_health:
@@ -806,6 +823,30 @@ class ZombieGame(commands.Cog):
 
         await channel.send(f"🩸━━━━━━━━━━━━━━━━━━━━━━━🩸\n**End of Round {g.round}**\n🩸━━━━━━━━━━━━━━━━━━━━━━━🩸")
 
+        deaths_match = re.search(r"Deaths:\s*(.*?)\n\s*Survivors:", raw_outcome, re.DOTALL | re.IGNORECASE)
+        survivors_match = re.search(r"Survivors:\s*(.*)", raw_outcome, re.DOTALL | re.IGNORECASE)
+        
+        # Ensure bulleted_narration exists before using it
+        sentences = re.split(r'(?<=[.!?])\s+', raw_outcome)
+        bulleted_narration = [
+            format_bullet(bold_character_names(s.strip().lstrip("•")))
+            for s in sentences
+            if s.strip() and s.strip() != "•"
+        ]
+        
+        cleaned_narration = []
+        for line in bulleted_narration:
+            match = re.search(r"(\*\*.*?\*\*:.*?)(?=\s+[A-Z])", line)
+            if match:
+                split_index = match.end()
+                cleaned_narration.append(line[:split_index].strip())
+                cleaned_narration.append(line[split_index:].strip())
+            else:
+                cleaned_narration.append(line)
+        
+        bulleted_narration = cleaned_narration
+        
+        # Now parse deaths/survivors safely
         deaths_match = re.search(r"Deaths:\s*(.*?)\n\s*Survivors:", raw_outcome, re.DOTALL | re.IGNORECASE)
         survivors_match = re.search(r"Survivors:\s*(.*)", raw_outcome, re.DOTALL | re.IGNORECASE)
         
