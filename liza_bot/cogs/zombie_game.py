@@ -12,9 +12,6 @@ from discord import app_commands
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🔧 Logging Setup
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("zombie_game")
 
@@ -43,40 +40,6 @@ def is_key_on_cooldown(key):
 def set_key_cooldown(key, seconds=600):
     key_cooldowns[key] = datetime.utcnow() + timedelta(seconds=seconds)
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧠 OpenRouter Request with Key Rotation
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async def send_openrouter_request(payload):
-    tried_keys = set()
-    for key in OPENROUTER_API_KEYS:
-        if key in tried_keys or is_key_on_cooldown(key):
-            continue
-        headers = {
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json"
-        }
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    json=payload,
-                    headers=headers,
-                    timeout=30
-                )
-                response.raise_for_status()
-                return response.json()
-        except httpx.HTTPStatusError as e:
-            tried_keys.add(key)
-            if e.response.status_code in [401, 429]:
-                logger.warning(f"Key failed with status {e.response.status_code}, trying next...")
-                set_key_cooldown(key, seconds=600)
-                continue
-            raise
-    raise RuntimeError("All OpenRouter keys exhausted or invalid.")
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧠 AI Text Generator
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async def generate_ai_text(messages, temperature=0.8):
     if active_game and active_game.terminated:
         return None
@@ -97,9 +60,6 @@ async def generate_ai_text(messages, temperature=0.8):
     logger.error("AI request failed after key rotation.")
     return None
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧍 Character Definitions
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
         "age": 15, "gender": "Male",
@@ -186,11 +146,9 @@ CHARACTER_INFO = {
         "likely_conflicts": ["Dylan Pastorin"]
     }
 }
+
 CHARACTERS = list(CHARACTER_INFO.keys())
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧠 Game State
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 class GameState:
     def __init__(self, initiator: int):
         self.initiator = initiator
@@ -237,9 +195,6 @@ async def start_game_async(user_id: int):
     active_game.story_seed = await generate_unique_setting()
     active_game.story_context = f"Setting: {active_game.story_seed}\n"
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🎨 Formatting Helpers
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def bold_name(name: str) -> str:
     return f"**{name}**"
 
@@ -291,6 +246,191 @@ def enforce_bullets(text: str) -> list:
         spaced.append("")
     return spaced
 
+async def stream_bullets_in_message(channel: discord.TextChannel, bullets: list, delay: float = 0.8):
+    content = ""
+    try:
+        msg = await channel.send("...")
+    except Exception as e:
+        logger.warning(f"Initial message failed: {e}")
+        return
+    for bullet in bullets:
+        if bullet.strip():
+            content += bullet + "\n\n"
+            try:
+                await msg.edit(content=content.strip())
+                await asyncio.sleep(delay)
+            except Exception as e:
+                logger.warning(f"Bullet stream failed: {e}")
+                break
+
+async def game_countdown_message(channel: discord.TextChannel, seconds: int, prefix: str = "", final_message: str = None):
+    try:
+        msg = await channel.send(f"{prefix} {seconds}")
+        for i in range(seconds - 1, 0, -1):
+            if active_game and active_game.terminated:
+                return
+            await asyncio.sleep(1)
+            await msg.edit(content=f"{prefix} {i}")
+        await asyncio.sleep(1)
+        if final_message:
+            await msg.edit(content=final_message)
+    except Exception as e:
+        logger.warning(f"Game countdown failed: {e}")
+
+async def animate_game_start(message: discord.Message, stop_event: asyncio.Event, base_text: str = "🧟‍♀️ Game is starting"):
+    dots = ["", ".", "..", "..."]
+    i = 0
+    while not stop_event.is_set():
+        try:
+            await message.edit(content=f"{base_text}{dots[i % len(dots)]}")
+            await asyncio.sleep(0.6)
+            i += 1
+        except Exception as e:
+            logger.warning(f"Game start animation failed: {e}")
+            break
+
+async def countdown_message(message: discord.Message, seconds: int, prefix: str = "", final_text: str = None):
+    for i in range(seconds, 0, -1):
+        if active_game and active_game.terminated:
+            return
+        try:
+            await message.edit(content=f"{prefix} {i}")
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.warning(f"Countdown failed: {e}")
+            break
+    if final_text:
+        try:
+            await message.edit(content=final_text)
+        except Exception as e:
+            logger.warning(f"Final edit failed: {e}")
+
+def build_scene_prompt():
+    g = active_game
+    traits = "\n".join([
+        f"{bold_name(n)}: {', '.join(CHARACTER_INFO.get(n.strip(), {}).get('traits', ['Unknown']))}"
+        for n in g.alive
+    ])
+    return (
+        "You are a text-only assistant. Do not generate or suggest images under any circumstances. "
+        "Entire text length should be able to fit within a Discord message (under 2,000 characters). "
+        "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. Stay fully in-character and in-world. "
+        "The world has fallen to a zombie outbreak. The survivors are hunted, exhausted, and emotionally frayed. Every scene continues their desperate struggle against the undead and each other. "
+        "Respond only with narrative, dialogue, and bullet-pointed text.\n\n"
+        f"{g.story_context}\n"
+        f"🧍 Alive: {', '.join([bold_name(n) for n in g.alive])}\n"
+        f"🧠 Traits:\n{traits}\n\n"
+        "🎬 Continue the story. Include every alive character. "
+        "Format each action as a bullet point using •. Keep bullets short and on their own lines. "
+        "Avoid repeating scenes or plotlines from previous sessions. "
+        "Never revive characters who have died. "
+        "Don't treat dead characters as alive. "
+        "Do not list multiple options. Do not use numbered choices. Only continue the story."
+    )
+
+def build_scene_summary_prompt(scene_text):
+    return (
+        f"{active_game.story_context}\n"
+        f"Scene:\n{scene_text}\n\n"
+        "🧠 Summarize the key events in exactly one sentence."
+    )
+
+def build_health_prompt():
+    g = active_game
+    return (
+        f"{g.story_context}\n"
+        f"🧍 Alive: {', '.join(g.alive)}\n\n"
+        "🧠 For each character, describe their physical condition in 2–3 words. "
+        "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. Stay fully in-character and in-world. "
+        "Format each as a bullet point using •. "
+        "After the bullets, describe the ambient atmosphere in a brief sentence. Do not merge character traits with narration. "
+        "Do not include dead characters. "
+        "Do not revive dead characters."
+    )
+
+def build_group_dynamics_prompt():
+    g = active_game
+    return (
+        f"{g.story_context}\n"
+        f"🧍 Alive: {', '.join(g.alive)}\n\n"
+        "Summarize the current group dynamics in 3–5 bullet points. Focus only on notable relationship shifts: emerging bonds and rising tensions. Avoid listing every character. Do not repeat previous dynamics unless they’ve evolved. Keep each bullet short and emotionally resonant."
+    )
+
+def build_dilemma_prompt(scene_text, health_text):
+    return (
+        f"{active_game.story_context}\n"
+        f"Scene:\n{scene_text}\n\n"
+        f"Health:\n{health_text}\n\n"
+        "🧠 Describe a new problem that arises, specific to this situation. "
+        "Do not include any choices or options. Only describe the situation. "
+        "Format as exactly two bullet points using •."
+    )
+
+def build_choices_prompt(dilemma_text):
+    return (
+        f"{active_game.story_context}\n"
+        f"Dilemma:\n{dilemma_text}\n\n"
+        "Based on the current scene, list exactly 2 distinct choices the survivors could make next. Format each as a bullet point. Do not continue the story or describe what characters already did. These are branching options for the players to choose from. "
+        "Format each as a numbered bullet starting with '1.' and '2.'."
+    )
+
+async def generate_scene(g):
+    raw_scene = await generate_ai_text([
+        {"role": "system", "content": "You are a horror narrator generating cinematic zombie survival scenes."},
+        {"role": "user", "content": build_scene_prompt()}
+    ])
+    auto_track_stats(raw_scene, g)
+    auto_track_relationships(raw_scene, g)
+    return raw_scene
+
+async def generate_outcome(scene_text, choice_text, g):
+    prompt = (
+        "You are a horror narrator summarizing the consequences of a specific player choice "
+        "in a zombie survival scene. Focus on what happened *because* of the choice. "
+        "Return short, vivid bullet points only. Do not describe images or include voting options.\n\n"
+        f"Scene:\n{scene_text}\n\n"
+        f"Chosen Action:\n{choice_text}"
+    )
+    raw_outcome = await generate_ai_text([
+        {"role": "system", "content": "You are a horror narrator generating outcome consequences."},
+        {"role": "user", "content": prompt}
+    ], temperature=0.8)
+    auto_track_stats(raw_outcome, g)
+    auto_track_relationships(raw_outcome, g)
+    return raw_outcome
+
+async def generate_scene_summary(scene_text, g):
+    raw_summary = await generate_ai_text([
+        {"role": "system", "content": "You are a horror narrator summarizing a zombie survival scene."},
+        {"role": "user", "content": build_scene_summary_prompt(scene_text)}
+    ], temperature=0.7)
+    auto_track_stats(raw_summary, g)
+    return raw_summary
+
+async def generate_health_report(g):
+    raw_health = await generate_ai_text([
+        {"role": "system", "content": "You are a horror narrator generating a health report."},
+        {"role": "user", "content": build_health_prompt()}
+    ])
+    auto_track_stats(raw_health, g)
+    return raw_health
+
+async def generate_group_dynamics(g):
+    raw_dynamics = await generate_ai_text([
+        {"role": "system", "content": "You are a horror narrator describing group dynamics."},
+        {"role": "user", "content": build_group_dynamics_prompt()}
+    ])
+    auto_track_stats(raw_dynamics, g)
+    auto_track_relationships(raw_dynamics, g)
+    return raw_dynamics
+
+async def generate_dilemma(scene_text, health_text, g):
+    raw_dilemma = await generate_ai_text([
+        {"role": "system", "content": "You are a horror narrator generating dilemmas."},
+        {"role": "user", "content": build_dilemma_prompt(scene_text, health_text)}
+    ])
+    return raw_dilemma
+
 async def generate_choices(dilemma_text):
     raw_choices = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator generating voting choices. Only output text."},
@@ -298,9 +438,6 @@ async def generate_choices(dilemma_text):
     ], temperature=0.8)
     return raw_choices
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧠 Stat & Relationship Tracking
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def auto_track_stats(text: str, g):
     if not text:
         return
@@ -329,9 +466,6 @@ def auto_track_relationships(text: str, g):
 def get_top_stat(stat_dict):
     return max(stat_dict.items(), key=lambda x: x[1])[0] if stat_dict else "None"
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧟 Quote Merging & Death Inference
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def merge_broken_quotes(lines):
     merged = []
     buffer = ""
@@ -358,9 +492,6 @@ def infer_deaths_from_narration(bullets):
                 deaths.append(name)
     return list(set(deaths))
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🗳️ Vote Tallying
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async def tally_votes(message):
     votes = {"1️⃣": 0, "2️⃣": 0}
     for reaction in message.reactions:
@@ -371,9 +502,6 @@ async def tally_votes(message):
                     votes[reaction.emoji] += 1
     return votes
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ⚙️ Cog Setup
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async def setup(bot: commands.Bot):
     await bot.add_cog(ZombieGame(bot))
     print("✅ ZombieGame cog loaded")
@@ -660,27 +788,7 @@ class ZombieGame(commands.Cog):
             end_game()
             return
 
-        # Clean outcome text
-        def clean_and_space_bullets(text: str) -> str:
-            lines = text.split("\n")
-            cleaned = []
-            skip = False
-            for line in lines:
-                line = line.replace("• -", "•").strip()
-                if line.lower().startswith("• deaths:") or line.lower().startswith("• survivors:"):
-                    skip = True
-                    continue
-                if skip and line.startswith("•"):
-                    continue
-                if skip and not line.startswith("•"):
-                    skip = False
-                if not skip and line:
-                    cleaned.append("") if line.startswith("•") else None
-                    cleaned.append(line)
-            return "\n".join(cleaned)
-
-        outcome_text = clean_and_space_bullets(raw_outcome)
-
+        outcome_text = raw_outcome.strip()
         await channel.send(f"🩸━━━━━━━━━━━━━━━━━━━━━━━🩸\n**End of Round {g.round}**\n🩸━━━━━━━━━━━━━━━━━━━━━━━🩸")
 
         deaths_match = re.search(r"Deaths:\s*(.*?)\n\s*Survivors:", raw_outcome, re.DOTALL | re.IGNORECASE)
@@ -705,153 +813,76 @@ class ZombieGame(commands.Cog):
 
         bulleted_narration = cleaned_narration
 
+        # Update deaths and survivors
+        deaths = []
+        survivors = []
+
         if deaths_match:
-            deaths_list = enforce_bullets(deaths_match.group(1))
+            deaths = [name.strip() for name in deaths_match.group(1).split(",") if name.strip()]
         else:
-            logger.warning("⚠️ No 'Deaths:' block found — inferring deaths from narration.")
-            deaths_list = infer_deaths_from_narration(bulleted_narration)
+            deaths = infer_deaths_from_narration(bulleted_narration)
 
         if survivors_match:
-            survivors_list = enforce_bullets(survivors_match.group(1))
+            survivors = [name.strip() for name in survivors_match.group(1).split(",") if name.strip()]
         else:
-            survivors_list = [name for name in g.alive if name not in deaths_list]
+            survivors = [name for name in g.alive if name not in deaths]
 
-        deaths_list = enforce_bullets(deaths_match.group(1)) if deaths_match else []
-        survivors_list = enforce_bullets(survivors_match.group(1)) if survivors_match else []
+        # Fallback: if no survivors listed, revive one
+        if not survivors and deaths:
+            revived = random.choice(deaths)
+            survivors = [revived]
+            deaths.remove(revived)
+            await channel.send(f"⚠️ No survivors listed. Reviving {revived} to avoid crash.")
 
-        deaths_list = [line.replace("• -", "•").replace("•  -", "•") for line in deaths_list]
-        survivors_list = [line.replace("• -", "•").replace("•  -", "•") for line in survivors_list]
+        g.alive = [name for name in g.alive if name not in deaths]
+        g.dead.extend([name for name in deaths if name not in g.dead])
 
-        for line in deaths_list:
-            name = line.replace("•", "").strip()
-            if name in g.alive:
-                g.alive.remove(name)
-
-        if not survivors_list and deaths_list:
-            still_alive = [name for name in CHARACTER_INFO if name not in deaths_list]
-            if still_alive:
-                survivor = random.choice(still_alive)
-                deaths_list = [name for name in deaths_list if name != survivor]
-                survivors_list.append(survivor)
-                logger.warning(f"⚠️ No survivors listed — reviving {survivor} as fallback.")
-
-        g.dead.extend([re.sub(r"^\W+", "", b).strip("*• ").strip() for b in deaths_list if b])
-        g.alive = [re.sub(r"^\W+", "", b).strip("*• ").strip() for b in survivors_list if b]
-
-        sentences = re.split(r'(?<=[.!?])\s+', raw_outcome)
-        bulleted_narration = [
-            format_bullet(bold_character_names(s.strip().lstrip("•")))
-            for s in sentences
-            if s.strip() and s.strip() != "•"
+        outcome_bullets = [
+            format_bullet(bold_character_names(line.strip().lstrip("•")))
+            for line in bulleted_narration
+            if line.strip()
         ]
 
-        cleaned_narration = []
-        for line in bulleted_narration:
-            match = re.search(r"(\*\*.*?\*\*:.*?[a-z])\s+(?=[A-Z])", line)
-            if match:
-                split_index = match.end()
-                cleaned_narration.append(line[:split_index].strip())
-                cleaned_narration.append(line[split_index:].strip())
-            else:
-                cleaned_narration.append(line)
+        await stream_bullets_in_message(channel, outcome_bullets, delay=3.5)
 
-        bulleted_narration = cleaned_narration
-
-        if not bulleted_narration:
-            await channel.send("⚠️ No outcome narration was generated.")
-            return
-
-        outcome_msg = await channel.send("‎")
-        full_text = "━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━\n\n"
-        chunk_limit = 1900
-
-        for line in bulleted_narration:
-            next_line = line + "\n\n"
-            if len(full_text) + len(next_line) > chunk_limit:
-                await outcome_msg.edit(content=full_text.strip())
-                await asyncio.sleep(4.5)
-                full_text = next_line
-            else:
-                full_text += next_line
-
-        if full_text.strip():
-            await outcome_msg.edit(content=full_text.strip())
-
-        narration_only = raw_scene
-        g.story_context += narration_only + "\n"
-
-        await channel.send("━━━━━━━━━━━━━━\n💀 **Deaths This Round**\n━━━━━━━━━━━━━━")
-        await stream_bullets_in_message(channel, deaths_list, delay=1.2)
-        await channel.send("━━━━━━━━━━━━━━\n🧍 **Remaining Survivors**\n━━━━━━━━━━━━━━")
-        await stream_bullets_in_message(channel, survivors_list, delay=1.2)
-
-        if len(g.alive) <= 1:
-            if len(g.alive) == 1:
-                await channel.send(f"🏆 {bold_name(g.alive[0])} is the sole survivor!")
-            else:
-                await channel.send("💀 No survivors remain.")
+        # End condition
+        if not g.alive:
+            await channel.send("☠️ All characters have died. Game over.")
             await self.end_summary(channel)
             end_game()
             return
 
         g.round_number += 1
-        await self.run_round(channel)
+        await channel.send(f"✅ Round {g.round} complete. {len(g.alive)} survivors remain.")
 
     async def end_summary(self, channel: discord.TextChannel):
         g = active_game
-        await channel.send("━━━━━━━━━━━━━━\n📜 **Game Summary**\n━━━━━━━━━━━━━━")
+        if not g:
+            await channel.send("⚠️ No game state found.")
+            return
 
-        valid_deaths = [name for name in g.dead if name and name.lower() != "none"]
-        deaths_block = [f"• {bold_name(name)}" for name in valid_deaths]
+        top_helped = get_top_stat(g.stats["helped"])
+        top_resourceful = get_top_stat(g.stats["resourceful"])
+        top_sinister = get_top_stat(g.stats["sinister"])
+        top_dignified = get_top_stat(g.stats["dignified"])
 
-        if not deaths_block:
-            deaths_block = ["• None"]
-        await channel.send("🪦 **Deaths (most recent first)**")
-        await stream_bullets_in_message(channel, deaths_block, delay=4.5)
+        bond_counts = g.stats["bonds"]
+        conflict_counts = g.stats["conflicts"]
 
-        def safe_top(stat_dict):
-            return get_top_stat(stat_dict) if stat_dict else "None"
+        strongest_bond = max(bond_counts.items(), key=lambda x: x[1])[0] if bond_counts else None
+        strongest_conflict = max(conflict_counts.items(), key=lambda x: x[1])[0] if conflict_counts else None
 
-        most_helpful = safe_top(g.stats.get("helped", {}))
-        most_sinister = safe_top(g.stats.get("sinister", {}))
-        most_resourceful = safe_top(g.stats.get("resourceful", {}))
-        most_dignified = safe_top(g.stats.get("dignified", {}))
-
-        bonds = sorted(g.stats.get("bonds", {}).items(), key=lambda x: x[1], reverse=True)
-        conflicts = sorted(g.stats.get("conflicts", {}).items(), key=lambda x: x[1], reverse=True)
-        bond_pair = bonds[0][0] if bonds else ("None", "None")
-        conflict_pair = conflicts[0][0] if conflicts else ("None", "None")
-
-        final_stats = [
-            f"🏅 Most helpful:\n• {bold_name(most_helpful)}",
-            f"😈 Most sinister:\n• {bold_name(most_sinister)}",
-            f"🔧 Most resourceful:\n• {bold_name(most_resourceful)}",
-            f"🤝 Greatest bond:\n• {bold_name(bond_pair[0])} & {bold_name(bond_pair[1])}",
-            f"⚔️ Biggest opps:\n• {bold_name(conflict_pair[0])} vs {bold_name(conflict_pair[1])}",
-            f"🕊️ Most dignified:\n• {bold_name(most_dignified)}"
+        summary_lines = [
+            f"🧍 Survivors: {', '.join(g.alive) if g.alive else 'None'}",
+            f"☠️ Deaths: {', '.join(g.dead) if g.dead else 'None'}",
+            f"🏅 Most helpful: {top_helped}" if top_helped != "None" else "",
+            f"🧠 Most resourceful: {top_resourceful}" if top_resourceful != "None" else "",
+            f"😈 Most sinister: {top_sinister}" if top_sinister != "None" else "",
+            f"🕊️ Most dignified: {top_dignified}" if top_dignified != "None" else "",
+            f"🤝 Strongest bond: {strongest_bond[0]} & {strongest_bond[1]}" if strongest_bond else "",
+            f"⚔️ Strongest conflict: {strongest_conflict[0]} vs {strongest_conflict[1]}" if strongest_conflict else ""
         ]
 
-        final_stats = [line for line in final_stats if "None" not in line]
-
-        await channel.send("━━━━━━━━━━━━━━\n📊 **Final Stats**")
-        await stream_bullets_in_message(channel, final_stats, delay=4.5)
-
-        recap_prompt = (
-            f"{g.story_context}\n"
-            f"Deaths: {', '.join(g.dead)}\n"
-            f"Survivors: {', '.join(g.alive)}\n"
-            f"Key choices made: {g.last_choice}\n"
-            f"Strongest bond: {bond_pair[0]} & {bond_pair[1]}\n"
-            f"Biggest conflict: {conflict_pair[0]} vs {conflict_pair[1]}\n\n"
-            "🎬 Write a brief cinematic recap of the entire game in bullet points."
-        )
-        raw_summary = await generate_scene_summary(recap_prompt, g)
-        summary_bullets = [
-            format_bullet(bold_character_names(line.lstrip("•").strip()))
-            for line in raw_summary.splitlines()
-            if line.strip() and line.strip() != "•"
-        ]
-
-        await channel.send("🧠 **Scene Summary**")
-        await stream_bullets_in_message(channel, summary_bullets, delay=4.5)
-        await channel.send("🎬 Thanks for surviving (or not) the zombie apocalypse. Until next time...")
+        filtered_summary = [format_bullet(line) for line in summary_lines if line]
+        await channel.send("━━━━━━━━━━━━━━\n🎬 **Final Summary**\n━━━━━━━━━━━━━━")
+        await stream_bullets_in_message(channel, filtered_summary, delay=2.5)
