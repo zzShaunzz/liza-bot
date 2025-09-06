@@ -611,16 +611,35 @@ class ZombieGame(commands.Cog):
                 sentences[i] = sentences[i].replace(f"__QUOTE_{j}__", quote)
 
         scene_bullets = []
+        buffer = ""
+        
         for sentence in sentences:
-            if sentence.strip():
-                formatted = format_bullet(bold_character_names(sentence.strip().lstrip("•")))
-                match = re.search(r"(\*\*.*?\*\*:.*?[a-z])\s+(?=[A-Z])", formatted)
-                if match:
-                    split_index = match.end()
-                    scene_bullets.append(formatted[:split_index].strip())
-                    scene_bullets.append(formatted[split_index:].strip())
-                else:
-                    scene_bullets.append(formatted)
+            stripped = sentence.strip()
+            if not stripped:
+                continue
+        
+            formatted = format_bullet(bold_character_names(stripped.lstrip("•")))
+        
+            # Merge quotes with previous bullet
+            if stripped.startswith('"') and not stripped.endswith(('"', '.', '!', '?')):
+                buffer = stripped
+                continue
+            elif buffer:
+                buffer += " " + stripped
+                if stripped.endswith(('"', '.', '!', '?')):
+                    if scene_bullets:
+                        scene_bullets[-1] += f" {buffer}"
+                    buffer = ""
+                continue
+        
+            # Split fused descriptor + ambient narration
+            match = re.search(r"(\*\*.*?\*\*:.*?)(?=\s+[A-Z])", formatted)
+            if match:
+                split_index = match.end()
+                scene_bullets.append(formatted[:split_index].strip())
+                scene_bullets.append(formatted[split_index:].strip())
+            else:
+                scene_bullets.append(formatted)
 
         await channel.send(f"━━━━━━━━━━━━━━\n🎭 **Scene {g.round_number}**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, scene_bullets, delay=4.7)
@@ -663,7 +682,7 @@ class ZombieGame(commands.Cog):
         health_bullets = []
         for line in cleaned_health_lines:
             formatted = format_bullet(bold_character_names(line.strip().lstrip("•")))
-            match = re.search(r"(\*\*.*?\*\*:.*?[a-z])\s+(?=[A-Z])", formatted)
+            match = re.search(r"(\*\*.*?\*\*:.*?)(?=\s+[A-Z])", formatted)
             if match:
                 split_index = match.end()
                 health_bullets.append(formatted[:split_index].strip())
@@ -784,13 +803,22 @@ class ZombieGame(commands.Cog):
             return "\n".join(cleaned)
 
         outcome_text = clean_and_space_bullets(raw_outcome)
-        await channel.send("━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━")
-        await channel.send(outcome_text)
 
         await channel.send(f"🩸━━━━━━━━━━━━━━━━━━━━━━━🩸\n**End of Round {g.round}**\n🩸━━━━━━━━━━━━━━━━━━━━━━━🩸")
 
         deaths_match = re.search(r"Deaths:\s*(.*?)\n\s*Survivors:", raw_outcome, re.DOTALL | re.IGNORECASE)
         survivors_match = re.search(r"Survivors:\s*(.*)", raw_outcome, re.DOTALL | re.IGNORECASE)
+        
+        if deaths_match:
+            deaths_list = enforce_bullets(deaths_match.group(1))
+        else:
+            logger.warning("⚠️ No 'Deaths:' block found — inferring deaths from narration.")
+            deaths_list = infer_deaths_from_narration(bulleted_narration)
+        
+        if survivors_match:
+            survivors_list = enforce_bullets(survivors_match.group(1))
+        else:
+            survivors_list = [name for name in g.alive if name not in deaths_list]
 
         deaths_list = enforce_bullets(deaths_match.group(1)) if deaths_match else []
         survivors_list = enforce_bullets(survivors_match.group(1)) if survivors_match else []
@@ -803,13 +831,13 @@ class ZombieGame(commands.Cog):
             if name in g.alive:
                 g.alive.remove(name)
 
-        if len(deaths_list) >= len(CHARACTER_INFO):
-            all_names = list(CHARACTER_INFO)
-            still_alive = [name for name in all_names if name not in deaths_list]
-            if not still_alive:
-                survivor = random.choice(all_names)
+        if not survivors_list and deaths_list:
+            still_alive = [name for name in CHARACTER_INFO if name not in deaths_list]
+            if still_alive:
+                survivor = random.choice(still_alive)
                 deaths_list = [name for name in deaths_list if name != survivor]
                 survivors_list.append(survivor)
+                logger.warning(f"⚠️ No survivors listed — reviving {survivor} as fallback.")
 
         g.dead.extend([re.sub(r"^\W+", "", b).strip("*• ").strip() for b in deaths_list if b])
         g.alive = [re.sub(r"^\W+", "", b).strip("*• ").strip() for b in survivors_list if b]
@@ -929,6 +957,14 @@ async def setup(bot: commands.Bot):
     print("✅ ZombieGame cog loaded")
 
 # Utilities
+def infer_deaths_from_narration(bullets):
+    deaths = []
+    for line in bullets:
+        for name in CHARACTER_INFO:
+            if name in line and re.search(r"(fall|drag|vanish|seized|pulled|die|dead|choked|struggle is brief)", line, re.IGNORECASE):
+                deaths.append(name)
+    return list(set(deaths))
+
 def is_key_on_cooldown(key):
     return key in key_cooldowns and datetime.utcnow() < key_cooldowns[key]
 
