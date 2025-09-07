@@ -405,6 +405,18 @@ async def stream_bullets_in_message(
 
         await asyncio.sleep(delay)
 
+async def animate_game_start(message: discord.Message, stop_event: asyncio.Event):
+    frames = ["🧟", "🧟‍♂️", "🧟‍♀️", "🧟", "🧟‍♂️", "🧟‍♀️"]
+    i = 0
+    while not stop_event.is_set():
+        try:
+            await message.edit(content=frames[i % len(frames)])
+        except Exception as e:
+            logger.warning(f"Animation edit failed: {e}")
+            break
+        i += 1
+        await asyncio.sleep(0.5)
+
 class ZombieGame(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
