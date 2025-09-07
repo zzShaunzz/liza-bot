@@ -14,15 +14,11 @@ from discord import app_commands
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🔧 Logging Setup
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Logging Setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("zombie_game")
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🌱 Environment Variables
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Environment Variables
 load_dotenv()
 
 ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
@@ -51,9 +47,7 @@ SPEED_SETTINGS = {
 active_game = None
 current_speed = 1.0
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧠 OpenRouter Request with Key Rotation
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# OpenRouter Request with Key Rotation
 def is_key_on_cooldown(key):
     return key in key_cooldowns and datetime.utcnow() < key_cooldowns[key]
 
@@ -96,9 +90,7 @@ async def send_openrouter_request(payload):
 
     raise RuntimeError("All OpenRouter keys exhausted or invalid.")
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧠 AI Text Generator
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# AI Text Generator
 async def generate_ai_text(messages, temperature=0.8):
     if active_game and active_game.terminated:
         return None
@@ -122,7 +114,7 @@ async def generate_ai_text(messages, temperature=0.8):
     logger.error("AI request failed after key rotation.")
     return None
 
-# ---------- Characters ----------
+# Characters
 CHARACTER_INFO = {
     "Shaun Sadsarin": {
         "age": 15, "gender": "Male",
@@ -223,7 +215,7 @@ CHARACTER_INFO = {
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
 
-# ---------- Game State ----------
+# Game State
 class GameState:
     def __init__(self, initiator: int):
         self.initiator = initiator
@@ -340,7 +332,7 @@ async def start_game_async(user_id: int, resume=False):
     active_game.story_context = f"Setting: {active_game.story_seed}\n"
     return True
 
-# ---------- Formatting ----------
+# Formatting
 def bold_name(name: str) -> str:
     return f"**{name}**"
 
@@ -506,7 +498,7 @@ async def countdown_message(message: discord.Message, seconds: int, prefix: str 
         except Exception as e:
             logger.warning(f"Final edit failed: {e}")
 
-# ---------- Prompt Builders ----------
+# Prompt Builders
 def build_scene_prompt():
     g = active_game
     traits = "\n".join([
@@ -577,7 +569,7 @@ def build_choices_prompt(dilemma_text):
         "Format each as a numbered bullet starting with '1.' and '2.'."
     )
 
-# ---------- AI Generators ----------
+# AI Generators
 async def generate_scene(g):
     raw_scene = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator generating cinematic zombie survival scenes."},
@@ -1124,20 +1116,6 @@ class ZombieGame(commands.Cog):
 
         bulleted_narration = cleaned_narration
 
-        if deaths_match:
-            deaths_list = enforce_bullets(deaths_match.group(1))
-        else:
-            logger.warning("⚠️ No 'Deaths:' block found — inferring deaths from narration.")
-            deaths_list = infer_deaths_from_narration(bulleted_narration)
-
-        if survivors_match:
-            survivors_list = enforce_bullets(survivors_match.group(1))
-        else:
-            survivors_list = [name for name in g.alive if name not in deaths_list]
-
-        deaths_list = [line.replace("• -", "•").replace("•  -", "•") for line in deaths_list]
-        survivors_list = [line.replace("• -", "•").replace("•  -", "•") for line in survivors_list]
-
         # NOW ask the AI to explicitly list deaths in a structured way
         death_detection_prompt = (
             f"STORY OUTCOME:\n{raw_outcome}\n\n"
@@ -1182,7 +1160,6 @@ class ZombieGame(commands.Cog):
             g.alive.append(revived)
             g.dead.remove(revived)
             logger.warning(f"⚠️ No survivors listed — reviving {revived} as fallback.")
-            survivors_list = [f"• {bold_name(revived)} (revived)"]
 
         # Format survivors list with emojis
         formatted_survivors = []
