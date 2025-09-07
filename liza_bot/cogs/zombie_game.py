@@ -402,6 +402,7 @@ def build_scene_prompt():
         "Respond only with narrative, dialogue, and bullet-pointed text.\n\n"
         f"{g.story_context}\n"
         f"🧍 Alive: {', '.join([bold_name(n) for n in g.alive])}\n"
+        f"💀 Dead: {', '.join([bold_name(n) for n in g.dead])}\n"
         f"🧠 Traits:\n{traits}\n\n"
         "🎬 Continue the story. Include every alive character. "
         "Format each action as a bullet point using •. Keep bullets short and on their own lines."
@@ -459,6 +460,8 @@ def build_choices_prompt(dilemma_text):
 
 # ---------- AI Generators ----------
 async def generate_scene(g):
+    g.dead = deaths_list  # Replace with your actual list of deaths this round
+    g.alive = survivors_list  # Replace with your actual list of survivors
     raw_scene = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator generating cinematic zombie survival scenes."},
         {"role": "user", "content": build_scene_prompt()}
@@ -933,22 +936,13 @@ class ZombieGame(commands.Cog):
             await channel.send("⚠️ No outcome narration was generated.")
             return
 
-        outcome_msg = await channel.send("‎")
-        full_text = "━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━\n\n"
-        chunk_limit = 1900
-
-        for line in bulleted_narration:
-            next_line = line + "\n\n"
-            if len(full_text) + len(next_line) > chunk_limit:
-                await outcome_msg.edit(content=full_text.strip())
-                await asyncio.sleep(4.5)
-                full_text = next_line
-            else:
-                full_text += next_line
-
-        if full_text.strip():
-            await outcome_msg.edit(content=full_text.strip())
-
+        if not bulleted_narration:
+            await channel.send("⚠️ No outcome narration was generated.")
+            return
+        
+        await channel.send("━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━")
+        await stream_bullets_in_message(channel, bulleted_narration, delay=4.5)
+            
         narration_only = raw_scene
         g.story_context += narration_only + "\n"
 
