@@ -3,12 +3,10 @@ import re
 import httpx
 import asyncio
 import logging
-import aiohttp
 import discord
 from dotenv import load_dotenv
 from discord.ext import commands
-from discord import Interaction
-from discord import app_commands
+from discord import app_commands, Interaction
 from collections import defaultdict
 from datetime import datetime, timedelta
 import random
@@ -33,28 +31,26 @@ OPENROUTER_API_KEYS = [
     os.getenv("OPENROUTER_API_KEY_4"),
     os.getenv("OPENROUTER_API_KEY_5"),
     os.getenv("OPENROUTER_API_KEY_6"),
+    os.getenv("OPENROUTER_API_KEY_7"),
 ]
-OPENROUTER_API_KEYS = [key for key in OPENROUTER_API_KEYS if key]
+OPENROUTER_API_KEYS = [k for k in OPENROUTER_API_KEYS if k]
 key_cooldowns = {}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🔁 OpenRouter Key Rotation
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def is_key_on_cooldown(key: str) -> bool:
+def is_key_on_cooldown(key):
     return key in key_cooldowns and datetime.utcnow() < key_cooldowns[key]
 
-def set_key_cooldown(key: str, seconds: int = 600):
+def set_key_cooldown(key, seconds=600):
     key_cooldowns[key] = datetime.utcnow() + timedelta(seconds=seconds)
 
-async def send_openrouter_request(payload: dict) -> dict:
+async def send_openrouter_request(payload):
     tried = set()
     for key in OPENROUTER_API_KEYS:
         if key in tried or is_key_on_cooldown(key):
             continue
-        headers = {
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json"
-        }
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
@@ -68,16 +64,16 @@ async def send_openrouter_request(payload: dict) -> dict:
         except httpx.HTTPStatusError as e:
             tried.add(key)
             if e.response.status_code in (401, 429):
-                logger.warning(f"Key {key[:6]} failed with {e.response.status_code}, cooling down.")
+                logger.warning(f"Key failed {e.response.status_code}, cooling down.")
                 set_key_cooldown(key)
                 continue
             raise
-    raise RuntimeError("All OpenRouter keys exhausted or invalid.")
+    raise RuntimeError("All OpenRouter keys exhausted.")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🧠 AI Text Generator
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async def generate_ai_text(messages: list, temperature: float = 0.8) -> str | None:
+async def generate_ai_text(messages, temperature=0.8):
     if active_game and active_game.terminated:
         return None
     payload = {"model": MODEL, "messages": messages, "temperature": temperature}
@@ -93,19 +89,84 @@ async def generate_ai_text(messages: list, temperature: float = 0.8) -> str | No
     return None
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧟‍♂️ Startup Animation
+# 🧠 Game State
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async def animate_game_start(message: discord.Message, stop_event: asyncio.Event):
-    frames = ["🧟", "🧟‍♂️", "🧟‍♀️", "🧟", "🧟‍♂️", "🧟‍♀️"]
-    i = 0
-    while not stop_event.is_set():
-        try:
-            await message.edit(content=frames[i % len(frames)])
-        except Exception as e:
-            logger.warning(f"Animation edit failed: {e}")
-            break
-        i += 1
-        await asyncio.sleep(0.5)
+class GameState:
+    def __init__(self, initiator: int):
+        self.initiator = initiator
+        self.round = 0
+        self.alive = []
+        self.dead = []
+        self.death_reasons = {}
+        self.last_choice = None
+        self.options = []
+        self.stats = {
+            "helped": defaultdict(int),
+            "resourceful": defaultdict(int),
+            "sinister": defaultdict(int),
+            "dignified": defaultdict(int),
+            "bonds": defaultdict(int),
+            "conflicts": defaultdict(int)
+        }
+        self.story_context = ""
+        self.terminated = False
+        self.round_number = 1
+        self.story_seed = ""
+
+active_game = None
+
+def end_game():
+    global active_game
+    if active_game:
+        active_game.terminated = True
+
+def is_active():
+    return active_game is not None and not active_game.terminated
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🌍 Game Lifecycle Helpers
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async def generate_unique_setting() -> str:
+    messages = [
+        {"role": "system", "content": "You are a horror storyteller."},
+        {"role": "user", "content": "🎬 Generate a unique setting for a zombie survival story. One vivid, eerie sentence."}
+    ]
+    return await generate_ai_text(messages)
+
+async def start_game_async(user_id: int):
+    global active_game
+    active_game = GameState(user_id)
+    active_game.alive = list(CHARACTER_INFO.keys())
+    active_game.story_seed = await generate_unique_setting()
+    active_game.story_context = f"Setting: {active_game.story_seed}\n"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🧩 Prompt Builders
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def build_scene_prompt() -> str:
+    g = active_game
+    return (
+        f"{g.story_context}\n"
+        f"Alive characters: {', '.join(g.alive)}\n"
+        "🎬 Generate a cinematic zombie survival scene in bullet points."
+    )
+
+def build_scene_summary_prompt(scene_text: str) -> str:
+    return f"{scene_text}\n📝 Summarize the above scene in one concise paragraph."
+
+def build_health_prompt() -> str:
+    g = active_game
+    return f"{g.story_context}\n🩺 Provide a brief health status report for each character."
+
+def build_group_dynamics_prompt() -> str:
+    g = active_game
+    return f"{g.story_context}\n💬 Describe the current group dynamics among the survivors."
+
+def build_dilemma_prompt(raw_scene: str, raw_health: str) -> str:
+    return f"{raw_scene}\n\n{raw_health}\n🧠 Present a dilemma based on the above. Provide two options labeled 1. and 2."
+
+def build_choices_prompt(dilemma_text: str) -> str:
+    return f"{dilemma_text}\n🔀 Provide two numbered choices (1. and 2.) for the group to vote on."
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🧍 Character Definitions
@@ -199,122 +260,8 @@ CHARACTER_INFO = {
 CHARACTERS = list(CHARACTER_INFO.keys())
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧠 Game State
+# 🧍 Character Emoji Mapping
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-class GameState:
-    def __init__(self, initiator: int):
-        self.initiator = initiator
-        self.round = 0
-        self.alive = CHARACTERS.copy()
-        self.dead = []
-        self.death_reasons = {}
-        self.last_choice = None
-        self.options = []
-        self.stats = {
-            "helped":    defaultdict(int),
-            "resourceful": defaultdict(int),
-            "sinister":  defaultdict(int),
-            "dignified": defaultdict(int),
-            "bonds":     defaultdict(int),
-            "conflicts": defaultdict(int)
-        }
-        self.story_context = ""
-        self.terminated = False
-        self.round_number = 1
-
-active_game = None
-
-def end_game():
-    global active_game
-    if active_game:
-        active_game.terminated = True
-
-def is_active() -> bool:
-    return active_game is not None and not active_game.terminated
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🌍 Game Lifecycle Helpers
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async def generate_unique_setting() -> str:
-    messages = [
-        {"role": "system", "content": "You are a horror storyteller."},
-        {"role": "user", "content": "🎬 Generate a unique setting for a zombie survival story. One vivid, eerie sentence."}
-    ]
-    return await generate_ai_text(messages)
-
-async def start_game_async(user_id: int):
-    global active_game
-    active_game = GameState(user_id)
-    active_game.story_seed = await generate_unique_setting()
-    active_game.story_context = f"Setting: {active_game.story_seed}\n"
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧩 Prompt Builders
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def build_scene_prompt() -> str:
-    g = active_game
-    return (
-        f"{g.story_context}\n"
-        f"Alive characters: {', '.join(g.alive)}\n"
-        "🎬 Generate a cinematic zombie survival scene in bullet points."
-    )
-
-def build_scene_summary_prompt(scene: str) -> str:
-    return f"{scene}\n📝 Summarize the above scene in one concise paragraph."
-
-def build_health_prompt() -> str:
-    g = active_game
-    return (
-        f"{g.story_context}\n"
-        "🩺 Provide a brief health status report for each character."
-    )
-
-def build_group_dynamics_prompt() -> str:
-    g = active_game
-    return (
-        f"{g.story_context}\n"
-        "💬 Describe the current group dynamics among the survivors."
-    )
-
-def build_dilemma_prompt(scene: str, health: str) -> str:
-    return (
-        f"{scene}\n\n{health}\n"
-        "🧠 Present a dilemma based on the above. Provide two options labeled 1. and 2."
-    )
-
-def build_choices_prompt(dilemma: str) -> str:
-    return (
-        f"{dilemma}\n"
-        "🔀 Provide two numbered choices (1. and 2.) for the group to vote on."
-    )
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ⏱️ Speed, Health, Emojis, and Formatting Utilities
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-# Speed Control
-SPEED_MULTIPLIERS = {
-    "normal": 1.0,
-    "fast": 0.6,
-    "veryfast": 0.3
-}
-current_speed = "normal"
-
-def get_delay(base: float = 1.0) -> float:
-    """Compute a delay adjusted by the current speed multiplier."""
-    return base * SPEED_MULTIPLIERS.get(current_speed, 1.0)
-
-# Health Tier Assignment
-def assign_health_tier(index: int) -> str:
-    """Assign a colored emoji tier based on index (0=green, 1=yellow, else=red)."""
-    if index == 0:
-        return "🟢"
-    elif index == 1:
-        return "🟡"
-    else:
-        return "🔴"
-
-# Character Emoji Mapping
 CHARACTER_EMOJIS = {
     "Shaun Sadsarin": "<:hawhar:>",
     "Addison Sadsarin": "<:feeling_silly:>",
@@ -330,50 +277,60 @@ CHARACTER_EMOJIS = {
     "Jordan": "<:agua:>"
 }
 
-# Bolding Logic (with possessive support)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ⏱️ Speed Control
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SPEED_MULTIPLIERS = {
+    "normal": 1.0,
+    "fast": 0.6,
+    "veryfast": 0.3
+}
+current_speed = "normal"
+
+def get_delay(base: float = 1.0) -> float:
+    return base * SPEED_MULTIPLIERS.get(current_speed, 1.0)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🩺 Health Tier Assignment
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def assign_health_tier(index: int) -> str:
+    if index == 0:
+        return "🟢"
+    elif index == 1:
+        return "🟡"
+    else:
+        return "🔴"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🔠 Bolding Logic
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def bold_name(name: str) -> str:
-    """Wrap a character name in Discord markdown bold."""
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
-    """
-    Bold all occurrences of full character names, first names,
-    and their possessive forms (straight and curly apostrophes).
-    """
     if not isinstance(text, str):
         return ""
-    # Remove existing bold markers
     text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
     for full_name in CHARACTER_INFO:
         first_name = full_name.split()[0]
         variants = [
             f"{full_name}'s", f"{full_name}’s",
             f"{first_name}'s", f"{first_name}’s",
-            full_name,
-            first_name
+            full_name, first_name
         ]
         for variant in variants:
-            escaped = re.escape(variant)
-            text = re.sub(rf"\b{escaped}\b", f"**{variant}**", text)
+            text = re.sub(rf"\b{re.escape(variant)}\b", f"**{variant}**", text)
     return text
 
-# Bullet Formatting Utilities
 def format_bullet(text: str) -> str:
-    """Normalize a single line into a bullet point."""
     return f"• {text.strip().lstrip('•-').strip()}"
 
 def split_into_sentences(text: str) -> list:
-    """Split a paragraph into sentences based on punctuation."""
     return re.split(r'(?<=[.!?])\s+', text.strip())
 
 def enforce_bullets(text: str) -> list:
-    """
-    Convert freeform text into a list of bullet lines.
-    Merges wrapped lines, bolds names, and ensures spacing.
-    """
     lines = text.splitlines()
-    bullets = []
-    buffer = ""
+    bullets, buffer = [], ""
     for line in lines:
         stripped = line.strip().lstrip("•").lstrip("*")
         if not stripped:
@@ -389,7 +346,6 @@ def enforce_bullets(text: str) -> list:
     if buffer:
         bullets.append(f"• {bold_character_names(buffer.strip())}")
 
-    # Further split bullets without character names into sentences
     final = []
     for b in bullets:
         plain = re.sub(r"\*\*(.*?)\*\*", r"\1", b)
@@ -400,27 +356,17 @@ def enforce_bullets(text: str) -> list:
         else:
             final.append(b)
 
-    # Insert blank line after each bullet for streaming
     spaced = []
     for b in final:
         spaced.append(b)
         spaced.append("")
     return spaced
 
-# Bullet Streaming
-async def stream_bullets_in_message(
-    channel: discord.TextChannel,
-    bullets: list,
-    delay: float = 0.8
-):
-    """
-    Send an initial placeholder message, then edit it line-by-line
-    to stream bullet points with pauses.
-    """
+async def stream_bullets_in_message(channel: discord.TextChannel, bullets: list, delay: float = 0.8):
     try:
         msg = await channel.send("...")
     except Exception as e:
-        logger.warning(f"Failed to send initial stream message: {e}")
+        logger.warning(f"Initial message failed: {e}")
         return
 
     content = ""
@@ -434,20 +380,17 @@ async def stream_bullets_in_message(
         try:
             await msg.edit(content=content.strip())
         except Exception as e:
-            logger.warning(f"Failed to edit stream message: {e}")
+            logger.warning(f"Stream edit failed: {e}")
             return
         await asyncio.sleep(delay)
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧟‍♂️ ZombieGame Commands & Game Start
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 class ZombieGame(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.tree = bot.tree
 
     @commands.command(name="lizazombie")
     async def lizazombie_legacy(self, ctx: commands.Context):
-        """Legacy start command."""
         if is_active():
             await ctx.send("⚠️ A zombie game is already running.")
             return
@@ -463,7 +406,6 @@ class ZombieGame(commands.Cog):
 
     @app_commands.command(name="lizazombie", description="Start a zombie survival game")
     async def lizazombie_slash(self, interaction: Interaction):
-        """Slash start command."""
         if interaction.channel.id != ZOMBIE_CHANNEL_ID:
             await interaction.response.send_message(
                 "❌ Run this command in the zombie channel.", ephemeral=True
@@ -488,7 +430,6 @@ class ZombieGame(commands.Cog):
 
     @commands.command(name="endzombie")
     async def endzombie_legacy(self, ctx: commands.Context):
-        """Legacy end command."""
         if not is_active():
             await ctx.send("⚠️ No active zombie game to end.")
             return
@@ -500,7 +441,6 @@ class ZombieGame(commands.Cog):
 
     @app_commands.command(name="endzombie", description="Manually end the zombie game")
     async def endzombie_slash(self, interaction: Interaction):
-        """Slash end command."""
         if not is_active():
             await interaction.response.send_message(
                 "⚠️ No active zombie game to end.", ephemeral=True
@@ -512,77 +452,6 @@ class ZombieGame(commands.Cog):
         await self.end_summary(interaction.channel)
         end_game()
 
-    @commands.command(name="dead")
-    async def dead_legacy(self, ctx: commands.Context):
-        """Legacy dead list command."""
-        if not is_active():
-            await ctx.send("⚠️ No active game.")
-            return
-
-        if not active_game.dead:
-            await ctx.send("💀 No deaths yet.")
-            return
-
-        lines = [
-            f"• {bold_name(name)}: {active_game.death_reasons.get(name, 'Unknown cause')}"
-            for name in active_game.dead
-        ]
-        await ctx.send("💀 **Dead Characters**")
-        await stream_bullets_in_message(ctx.channel, lines, delay=1.0)
-
-    @app_commands.command(name="dead", description="List all dead characters and how they died")
-    async def dead_slash(self, interaction: Interaction):
-        """Slash dead list command."""
-        if not is_active():
-            await interaction.response.send_message("⚠️ No active game.", ephemeral=True)
-            return
-
-        if not active_game.dead:
-            await interaction.response.send_message("💀 No deaths yet.", ephemeral=True)
-            return
-
-        lines = [
-            f"• {bold_name(name)}: {active_game.death_reasons.get(name, 'Unknown cause')}"
-            for name in active_game.dead
-        ]
-        await interaction.response.send_message("💀 **Dead Characters**")
-        await stream_bullets_in_message(interaction.channel, lines, delay=1.0)
-
-    @commands.command(name="speed")
-    async def speed_legacy(self, ctx: commands.Context, mode: str = "normal"):
-        """Legacy speed control."""
-        global current_speed
-        mode = mode.lower()
-        if mode not in SPEED_MULTIPLIERS:
-            await ctx.send("❌ Invalid speed. Choose: `normal`, `fast`, or `veryfast`.")
-            return
-
-        current_speed = mode
-        await ctx.send(f"⏱️ Speed set to **{mode}**")
-
-    @speed_legacy.error
-    async def speed_legacy_error(self, ctx: commands.Context, error):
-        if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send("❌ You need to specify a speed mode: `normal`, `fast`, or `veryfast`.")
-
-    @app_commands.command(name="speed", description="Change pacing of the game")
-    @app_commands.describe(mode="Choose pacing: normal, fast, veryfast")
-    async def speed_slash(self, interaction: Interaction, mode: str):
-        """Slash speed control."""
-        global current_speed
-        mode = mode.lower()
-        if mode not in SPEED_MULTIPLIERS:
-            await interaction.response.send_message(
-                "❌ Invalid speed. Choose: normal, fast, veryfast", ephemeral=True
-            )
-            return
-
-        current_speed = mode
-        await interaction.response.send_message(f"⏱️ Speed set to **{mode}**", ephemeral=True)
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # 🔄 Round Execution
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     async def run_round(self, channel: discord.TextChannel):
         g = active_game
         g.round += 1
@@ -684,12 +553,8 @@ class ZombieGame(commands.Cog):
         await choices_msg.add_reaction("1️⃣")
         await choices_msg.add_reaction("2️⃣")
 
-        # Phase 7: Voting
         await self.wait_for_votes(choices_msg, channel)
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # 🗳️ Vote Tally & Auto-Advance
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     async def wait_for_votes(self, message: discord.Message, channel: discord.TextChannel):
         g = active_game
         vote_deadline = datetime.utcnow() + timedelta(seconds=20)
@@ -714,9 +579,6 @@ class ZombieGame(commands.Cog):
         await channel.send("🗳️ **Voting has finished!**")
         await self.resolve_outcome(channel)
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # ⚡ Outcome Resolution & Round Recap
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     async def resolve_outcome(self, channel: discord.TextChannel):
         g = active_game
         prompt = (
@@ -742,7 +604,6 @@ class ZombieGame(commands.Cog):
         deaths_match = re.search(r"Deaths:\s*(.*?)\n\s*Survivors:", raw_outcome, re.DOTALL | re.IGNORECASE)
         survivors_match = re.search(r"Survivors:\s*(.*)", raw_outcome, re.DOTALL | re.IGNORECASE)
 
-        # Break into clean bullets
         narration = enforce_bullets(bold_character_names(raw_outcome))
         cleaned = []
         for line in narration:
@@ -754,7 +615,6 @@ class ZombieGame(commands.Cog):
             else:
                 cleaned.append(line)
 
-        # Determine death & survivor lists
         if deaths_match:
             deaths_list = enforce_bullets(deaths_match.group(1))
         else:
@@ -765,7 +625,6 @@ class ZombieGame(commands.Cog):
         else:
             survivors_list = [name for name in g.alive if name not in deaths_list]
 
-        # Normalize and update game state
         deaths_list = [b.replace("•  -", "•").replace("• -", "•") for b in deaths_list]
         survivors_list = [b.replace("•  -", "•").replace("• -", "•") for b in survivors_list]
 
@@ -780,24 +639,20 @@ class ZombieGame(commands.Cog):
             survivors_list = [f"• {fallback}"]
             logger.warning(f"⚠️ No survivors listed—reviving {fallback} as fallback.")
 
-        # Track death reasons
         for line in cleaned:
             for name in g.dead:
                 if name in line and name not in g.death_reasons:
                     g.death_reasons[name] = re.sub(r"^\W+", "", line)
 
-        # Stream outcome narration
         await channel.send("━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, cleaned, delay=get_delay(4.5))
 
-        # Round recap: deaths & survivors
         await channel.send("━━━━━━━━━━━━━━\n💀 **Deaths This Round**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, deaths_list, delay=get_delay(1.2))
 
         await channel.send("━━━━━━━━━━━━━━\n🧍 **Remaining Survivors**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, survivors_list, delay=get_delay(1.2))
 
-        # Endgame check
         if len(g.alive) <= 1:
             if g.alive:
                 await channel.send(f"🏆 {bold_name(g.alive[0])} is the sole survivor!")
@@ -807,13 +662,9 @@ class ZombieGame(commands.Cog):
             end_game()
             return
 
-        # Next round
         g.round_number += 1
         await self.run_round(channel)
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # 📜 Endgame Summary & Final Stats
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     async def end_summary(self, channel: discord.TextChannel):
         g = active_game
         await channel.send("━━━━━━━━━━━━━━\n📜 **Game Summary**\n━━━━━━━━━━━━━━")
@@ -868,16 +719,14 @@ class ZombieGame(commands.Cog):
 
         await channel.send("🎬 Thanks for surviving (or not) the zombie apocalypse. Until next time...")
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ⚙️ Cog Setup
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async def setup(bot: commands.Bot):
-    await bot.add_cog(ZombieGame(bot))
-    logger.info("✅ ZombieGame cog loaded")
+    cog = ZombieGame(bot)
+    await bot.add_cog(cog)
+    bot.tree.add_command(cog.lizazombie_slash)
+    bot.tree.add_command(cog.endzombie_slash)
+    await bot.tree.sync()
+    logger.info("✅ ZombieGame cog loaded and slash commands synced")
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🛠️ Utility Functions
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def auto_track_stats(text: str, g: GameState):
     if not text:
         return
