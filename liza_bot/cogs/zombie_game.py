@@ -11,6 +11,7 @@ from discord import Interaction
 from discord import app_commands
 from collections import defaultdict
 from datetime import datetime, timedelta
+import random
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🔧 Logging Setup
@@ -110,7 +111,7 @@ async def generate_ai_text(messages, temperature=0.8):
     return None
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🕒 Speed Control
+# ⏱️ Speed Control
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SPEED_MULTIPLIERS = {
     "normal": 1.0,
@@ -309,7 +310,7 @@ def bold_character_names(text: str) -> str:
 
 # ---------- Bullet Formatting ----------
 def format_bullet(text: str) -> str:
-    return f"• {text.strip().lstrip('•-').strip()}"
+    return f"• {text.strip().lstrip('•*-').strip()}"
 
 def split_into_sentences(text: str) -> list:
     return re.split(r'(?<=[.!?])\s+', text.strip())
@@ -320,24 +321,24 @@ def enforce_bullets(text: str) -> list:
     current = ""
 
     for line in lines:
-        stripped = line.strip().lstrip("•").lstrip("*")
+        stripped = line.strip().lstrip("•*-").strip()
         if not stripped:
             continue
 
         contains_name = any(name in stripped for name in CHARACTER_INFO)
-        is_bullet = line.strip().startswith("•") or line.strip().startswith("*")
+        is_bullet = line.strip().startswith(("•", "*", "-"))
 
         if is_bullet or contains_name:
             if current:
                 cleaned = current.strip().rstrip("*")
-                bullets.append(f"• {bold_character_names(cleaned)}")
+                bullets.append(format_bullet(bold_character_names(cleaned)))
             current = stripped
         else:
             current += " " + stripped
 
     if current:
         cleaned = current.strip().rstrip("*")
-        bullets.append(f"• {bold_character_names(cleaned)}")
+        bullets.append(format_bullet(bold_character_names(cleaned)))
 
     final_bullets = []
     for b in bullets:
@@ -346,7 +347,7 @@ def enforce_bullets(text: str) -> list:
         else:
             for sentence in split_into_sentences(b):
                 if sentence.strip():
-                    final_bullets.append(f"• {sentence.strip()}")
+                    final_bullets.append(format_bullet(sentence.strip()))
 
     spaced = []
     for b in final_bullets:
@@ -606,10 +607,12 @@ class ZombieGame(commands.Cog):
             return
 
         scene_text = bold_character_names(raw_scene)
-        scene_bullets = [format_bullet(s.strip()) for s in scene_text.split("•") if s.strip()]
+        scene_bullets = enforce_bullets(scene_text)
         await channel.send(f"━━━━━━━━━━━━━━\n🎭 **Scene {g.round_number}**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, scene_bullets, base_delay=4.5)
         g.story_context += "\n".join(scene_bullets) + "\n"
+        auto_track_stats(raw_scene, g)
+        auto_track_relationships(raw_scene, g)
 
         # Phase 2: Summary
         raw_summary = await generate_ai_text([
@@ -631,7 +634,8 @@ class ZombieGame(commands.Cog):
             return
 
         health_bullets = []
-        for i, line in enumerate(enforce_bullets(bold_character_names(raw_health))):
+        lines = enforce_bullets(bold_character_names(raw_health))
+        for i, line in enumerate(lines):
             if ":" in line:
                 raw_name, status = line.split(":", 1)
                 name = re.sub(r"\*\*(.*?)\*\*", r"\1", raw_name.strip())
@@ -650,9 +654,11 @@ class ZombieGame(commands.Cog):
             {"role": "user", "content": build_group_dynamics_prompt()}
         ])
         if raw_dynamics:
-            dynamics_bullets = [format_bullet(line.strip()) for line in enforce_bullets(bold_character_names(raw_dynamics))]
+            dynamics_bullets = enforce_bullets(bold_character_names(raw_dynamics))
             await channel.send("━━━━━━━━━━━━━━\n💬 **Group Dynamics**\n━━━━━━━━━━━━━━")
             await stream_bullets_in_message(channel, dynamics_bullets, base_delay=3.5)
+            auto_track_stats(raw_dynamics, g)
+            auto_track_relationships(raw_dynamics, g)
 
         # Phase 5: Dilemma
         raw_dilemma = await generate_ai_text([
@@ -663,7 +669,7 @@ class ZombieGame(commands.Cog):
             await channel.send("⚠️ Dilemma generation failed.")
             return
 
-        dilemma_bullets = [format_bullet(line.strip()) for line in enforce_bullets(bold_character_names(raw_dilemma))]
+        dilemma_bullets = enforce_bullets(bold_character_names(raw_dilemma))
         await channel.send(f"━━━━━━━━━━━━━━\n🧠 **Dilemma – Round {g.round_number}**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, dilemma_bullets, base_delay=5.0)
 
@@ -717,6 +723,7 @@ class ZombieGame(commands.Cog):
 
         g.last_choice = g.options[0] if votes["1️⃣"] >= votes["2️⃣"] else g.options[1]
         await channel.send("🗳️ **Voting has finished!**")
+        await self.resolve_outcome(channel)
 
     async def resolve_outcome(self, channel: discord.TextChannel):
         g = active_game
@@ -737,15 +744,17 @@ class ZombieGame(commands.Cog):
             end_game()
             return
 
-        bullets = [format_bullet(bold_character_names(line.strip())) for line in raw_outcome.splitlines() if line.strip()]
+        bullets = enforce_bullets(bold_character_names(raw_outcome))
         await channel.send("━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, bullets, base_delay=4.5)
         g.story_context += raw_outcome + "\n"
+        auto_track_stats(raw_outcome, g)
+        auto_track_relationships(raw_outcome, g)
 
         # Infer deaths and reasons
         for line in bullets:
             for name in g.alive[:]:
-                if name in line and re.search(r"(fall|drag|vanish|seized|pulled|die|dead|choked|struggle is brief)", line, re.IGNORECASE):
+                if name in line and re.search(r"(fall|drag|vanish|seized|pulled|die|dead|choked|struggle is brief|devoured|bitten|screams fade)", line, re.IGNORECASE):
                     g.dead.append(name)
                     g.alive.remove(name)
                     g.death_reasons[name] = line.strip()
@@ -834,7 +843,7 @@ class ZombieGame(commands.Cog):
             {"role": "user", "content": recap_prompt}
         ])
         if raw_summary:
-            summary_bullets = [format_bullet(bold_character_names(line.strip())) for line in raw_summary.splitlines() if line.strip()]
+            summary_bullets = enforce_bullets(bold_character_names(raw_summary))
             await channel.send("🧠 **Scene Summary**")
             await stream_bullets_in_message(channel, summary_bullets, base_delay=4.5)
 
