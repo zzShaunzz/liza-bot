@@ -158,7 +158,7 @@ CHARACTER_INFO = {
     },
     "Jill Nainggolan": {
         "age": 16, "gender": "Female",
-        "traits": ["conniving", "demure", "mellow", "swimmer"],
+        "traits": ["conniving", "demure", "mellow", "likes cookies"],
         "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
         "likely_conflicts": ["Noah Nainggolan"],
@@ -947,7 +947,7 @@ class ZombieGame(commands.Cog):
                     
                     # Format with proper spacing for emojis
                     emoji_name = info["emoji"]
-                    formatted_line = f"{icon} {bold_name(name)} :{emoji_name}: : {health_status}"
+                    formatted_line = f"{icon} {bold_name(name)} :{emoji_name}: - {health_status}"
                     health_lines.append(formatted_line)
                     break
             else:
@@ -1195,29 +1195,32 @@ class ZombieGame(commands.Cog):
 
     async def end_summary(self, channel: discord.TextChannel):
         g = active_game
+        if not g or g.terminated:
+            return  # Don't proceed if game is already terminated
+        
         await channel.send("━━━━━━━━━━━━━━\n📜 **Game Summary**\n━━━━━━━━━━━━━━")
-
+    
         valid_deaths = [name for name in g.dead if name and name.lower() != "none"]
         deaths_block = [f"• {bold_name(name)}" for name in valid_deaths]
-
+    
         if not deaths_block:
             deaths_block = ["• None"]
         await channel.send("🪦 **Deaths (most recent first)**")
         await stream_bullets_in_message(channel, deaths_block, "stats")
-
+    
         def safe_top(stat_dict):
             return max(stat_dict.items(), key=lambda x: x[1])[0] if stat_dict else "None"
-
+    
         most_helpful = safe_top(g.stats.get("helped", {}))
         most_sinister = safe_top(g.stats.get("sinister", {}))
         most_resourceful = safe_top(g.stats.get("resourceful", {}))
         most_dignified = safe_top(g.stats.get("dignified", {}))
-
+    
         bonds = sorted(g.stats.get("bonds", {}).items(), key=lambda x: x[1], reverse=True)
         conflicts = sorted(g.stats.get("conflicts", {}).items(), key=lambda x: x[1], reverse=True)
         bond_pair = bonds[0][0] if bonds else ("None", "None")
         conflict_pair = conflicts[0][0] if conflicts else ("None", "None")
-
+    
         final_stats = [
             f"🏅 Most helpful:\n• {bold_name(most_helpful)}",
             f"😈 Most sinister:\n• {bold_name(most_sinister)}",
@@ -1226,34 +1229,37 @@ class ZombieGame(commands.Cog):
             f"⚔️ Biggest opps:\n• {bold_name(conflict_pair[0])} vs {bold_name(conflict_pair[1])}",
             f"🕊️ Most dignified:\n• {bold_name(most_dignified)}"
         ]
-
+    
         final_stats = [line for line in final_stats if "None" not in line]
-
+    
         await channel.send("━━━━━━━━━━━━━━\n📊 **Final Stats**")
         await stream_bullets_in_message(channel, final_stats, "stats")
-
-        recap_prompt = (
-            f"{g.story_context}\n"
-            f"Deaths: {', '.join(g.dead)}\n"
-            f"Survivors: {', '.join(g.alive)}\n"
-            f"Key choices made: {g.last_choice}\n"
-            f"Strongest bond: {bond_pair[0]} & {bond_pair[1]}\n"
-            f"Biggest conflict: {conflict_pair[0]} vs {conflict_pair[1]}\n\n"
-            "🎬 Write a brief cinematic recap of the entire game in bullet points."
-        )
-        raw_summary = await generate_scene_summary(recap_prompt, g)
-        if not raw_summary:
-            await channel.send("⚠️ No recap was generated.")
-            return
+    
+        # Only generate recap if game wasn't manually terminated mid-round
+        if g.story_context and g.last_choice:
+            recap_prompt = (
+                f"{g.story_context}\n"
+                f"Deaths: {', '.join(g.dead)}\n"
+                f"Survivors: {', '.join(g.alive)}\n"
+                f"Key choices made: {g.last_choice}\n"
+                f"Strongest bond: {bond_pair[0]} & {bond_pair[1]}\n"
+                f"Biggest conflict: {conflict_pair[0]} vs {conflict_pair[1]}\n\n"
+                "🎬 Write a brief cinematic recap of the entire game in bullet points."
+            )
+            raw_summary = await generate_scene_summary(recap_prompt, g)
+            if raw_summary:
+                summary_bullets = [
+                    format_bullet(bold_character_names(line.lstrip("•").strip()))
+                    for line in raw_summary.splitlines()
+                    if line.strip() and line.strip() != "•"
+                ]
+                await channel.send("🧠 **Scene Summary**")
+                await stream_bullets_in_message(channel, summary_bullets, "summary")
+            else:
+                await channel.send("📝 *No AI recap generated due to manual termination*")
+        else:
+            await channel.send("📝 *Game ended manually before any story developed*")
         
-        summary_bullets = [
-            format_bullet(bold_character_names(line.lstrip("•").strip()))
-            for line in raw_summary.splitlines()
-            if line.strip() and line.strip() != "•"
-        ]
-
-        await channel.send("🧠 **Scene Summary**")
-        await stream_bullets_in_message(channel, summary_bullets, "summary")
         await channel.send("🎬 Thanks for surviving (or not) the zombie apocalypse. Until next time...")
 
 # Utilities
