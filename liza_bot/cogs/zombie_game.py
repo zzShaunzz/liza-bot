@@ -1043,15 +1043,19 @@ async def setup(bot: commands.Bot):
 
 # Utilities
 def auto_track_stats(raw_scene: str, g):
-    death_keywords = [
-        "dies", "killed", "slumps", "blood", "screams", "dragged", "crushed", "torn", "murdered", "disintegrated", "perishes",
-        "ceases", "devoured", "final breath", "dissolved", "corrosive", "acid", "eaten", "misted crimson"
-    ]
+    bullets = raw_scene.split("•")[1:]  # Skip the empty first split
 
-    for name in g.alive[:]:  # Copy to avoid mutation during iteration
-        if name in raw_scene and any(kw in raw_scene.lower() for kw in death_keywords):
-            g.dead.append(name)
-            g.alive.remove(name)
+    for bullet in bullets:
+        cleaned = bullet.strip().lower()
+        for name in g.alive[:]:  # Copy to avoid mutation
+            if re.search(rf"\b{name.lower()}\b", cleaned):
+                if any(phrase in cleaned for phrase in [
+                    "vanish", "dragged under", "pulled beneath", "final breath", "crushed", "dissolved",
+                    "slumps", "sinks", "submerged", "yanked", "gone", "lost", "devoured", "bitten", "torn"
+                ]) or cleaned.endswith(("slumps.", "vanishes.", "is gone.", "is lost.", "is dragged under.", "is crushed.")):
+                    g.dead.append(name)
+                    g.alive.remove(name)
+                    print(f"☠️ {name} marked dead based on bullet: {bullet.strip()}")
 
 def infer_deaths_from_narration(bullets):
     deaths = []
