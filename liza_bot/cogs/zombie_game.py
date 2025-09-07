@@ -637,8 +637,12 @@ class ZombieGame(commands.Cog):
 
         for line in scene_bullets:
             stripped = line.strip()
-            if stripped.startswith('"') or (buffer and not stripped.endswith(('"', '.', '!', '?'))):
-                buffer = stripped
+            if stripped.startswith('"') or buffer:
+                buffer += (" " if buffer else "") + stripped
+                if stripped.endswith('"') or stripped.endswith(('.', '!', '?')):
+                    if fused_bullets:
+                        fused_bullets[-1] += f" {buffer}"
+                    buffer = ""
                 continue
             elif buffer:
                 buffer += " " + stripped
