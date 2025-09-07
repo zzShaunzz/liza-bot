@@ -1141,16 +1141,41 @@ class ZombieGame(commands.Cog):
         deaths_list = [line.replace("• -", "•").replace("•  -", "•") for line in deaths_list]
         survivors_list = [line.replace("• -", "•").replace("•  -", "•") for line in survivors_list]
 
-        # Update game state with deaths
+        # NOW ask the AI to explicitly list deaths in a structured way
+        death_detection_prompt = (
+            f"STORY OUTCOME:\n{raw_outcome}\n\n"
+            f"CURRENT ALIVE CHARACTERS: {', '.join(g.alive)}\n\n"
+            "Analyze this story outcome and list ONLY the names of characters who definitely died. "
+            "Return the names in this exact format: \n"
+            "DIED: Name1, Name2, Name3\n\n"
+            "If no characters died, return: \n"
+            "DIED: None\n\n"
+            "Be strict - only include characters who clearly died in the narrative."
+        )
+        
+        death_analysis = await generate_ai_text([
+            {"role": "system", "content": "You are an analyst identifying character deaths from story text."},
+            {"role": "user", "content": death_detection_prompt}
+        ], temperature=0.3)  # Low temperature for consistent formatting
+        
+        # Parse the AI's death analysis
         new_deaths = []
-        for line in deaths_list:
-            name = line.replace("•", "").strip()
-            # Extract name from bold formatting if present
-            name = re.sub(r"\*\*([^*]+)\*\*", r"\1", name).strip()
-            if name in g.alive:
-                g.alive.remove(name)
-                new_deaths.append(name)
-
+        if death_analysis:
+            died_match = re.search(r"DIED:\s*(.+?)(?:\n|$)", death_analysis, re.IGNORECASE)
+            if died_match:
+                deaths_text = died_match.group(1).strip()
+                if deaths_text.lower() != "none":
+                    # Parse the death names
+                    death_names = [name.strip() for name in deaths_text.split(",")]
+                    for death_name in death_names:
+                        # Find matching character
+                        for char_name in g.alive[:]:
+                            if char_name.lower() == death_name.lower():
+                                g.alive.remove(char_name)
+                                g.dead.append(char_name)
+                                new_deaths.append(char_name)
+                                logger.info(f"☠️ {char_name} marked dead from AI death analysis")
+        
         g.dead.extend(new_deaths)
 
         # Fallback: ensure we don't lose all survivors
@@ -1165,8 +1190,13 @@ class ZombieGame(commands.Cog):
         # Format survivors list with emojis
         formatted_survivors = []
         for name in g.alive:
-            emoji = CHARACTER_INFO.get(name, {}).get("emoji", "")
-            formatted_survivors.append(f"• {bold_name(name)} :{emoji}:")
+            emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
+            # Try to get the actual emoji object from the server
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+            if emoji:
+                formatted_survivors.append(f"• {bold_name(name)} {emoji}")
+            else:
+                formatted_survivors.append(f"• {bold_name(name)} :{emoji_name}:")
 
         if not bulleted_narration:
             await channel.send("⚠️ No outcome narration was generated.")
