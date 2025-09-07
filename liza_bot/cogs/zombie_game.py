@@ -517,7 +517,7 @@ def build_scene_prompt():
         "You are a text-only assistant. Do not generate or suggest images under any circumstances. "
         "Entire text length should be able to fit within a Discord message (under 2,000 characters)."
         "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. Stay fully in-character and in-world."
-        "The world has fallen to a zombie outbreak. The survivors are hunted, exhausted, and emotionally frayed. Every scene continues their desperate struggle against the undead and each other."
+        "The world has fallen to a zombie outbreak. The youthful survivors are hunted, exhausted, and emotionally frayed. Every scene continues their desperate struggle against the undead and each other."
         "Respond only with narrative, dialogue, and bullet-pointed text.\n\n"
         f"{g.story_context}\n"
         f"🧍 Alive: {', '.join([bold_name(n) for n in g.alive])}\n"
@@ -947,7 +947,12 @@ class ZombieGame(commands.Cog):
                     
                     # Format with proper spacing for emojis
                     emoji_name = info["emoji"]
-                    formatted_line = f"{icon} {bold_name(name)} :{emoji_name}: - {health_status}"
+                    # Try to get the actual emoji object from the server
+                    emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+                    if emoji:
+                        formatted_line = f"{icon} {bold_name(name)} {emoji} - {health_status}"
+                    else:
+                        formatted_line = f"{icon} {bold_name(name)} :{emoji_name}: - {health_status}"
                     health_lines.append(formatted_line)
                     break
             else:
