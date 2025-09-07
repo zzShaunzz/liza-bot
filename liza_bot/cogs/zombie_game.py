@@ -459,7 +459,7 @@ def build_choices_prompt(dilemma_text):
     )
 
 # ---------- AI Generators ----------
-async def generate_scene(g):
+async def generate_scene(g, deaths_list, survivors_list):
     g.dead = deaths_list  # Replace with your actual list of deaths this round
     g.alive = survivors_list  # Replace with your actual list of survivors
     raw_scene = await generate_ai_text([
@@ -605,13 +605,15 @@ class ZombieGame(commands.Cog):
     async def run_round(self, channel: discord.TextChannel):
         g = active_game
         g.round += 1
+        deaths_list = g.dead  # or however you track deaths this round
+        survivors_list = g.alive  # or however you track survivors
 
         if g.terminated:
             await channel.send("🛑 Game has been terminated.")
             return
 
         # Phase 1: Scene
-        raw_scene = await generate_scene(g)
+        raw_scene = await generate_scene(g, deaths_list, survivors_list)
         if not raw_scene:
             await channel.send("⚠️ Scene generation failed.")
             return
