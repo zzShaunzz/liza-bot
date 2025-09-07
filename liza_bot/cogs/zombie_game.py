@@ -467,6 +467,12 @@ async def generate_scene(g, deaths_list, survivors_list):
         {"role": "user", "content": build_scene_prompt()}
     ])
     auto_track_stats(raw_scene, g)
+    # ⚠️ Validate that narration matches game state
+    for name in g.alive:
+        if name in raw_scene and any(word in raw_scene.lower() for word in [
+            "dies", "killed", "slumps", "blood", "screams", "dragged", "crushed", "torn", "bitten", "devoured"
+        ]):
+            logger.warning(f"⚠️ Mismatch: {name} described as dead but marked alive.")
     auto_track_relationships(raw_scene, g)
     return raw_scene
 
@@ -614,6 +620,8 @@ class ZombieGame(commands.Cog):
 
         # Phase 1: Scene
         raw_scene = await generate_scene(g, deaths_list, survivors_list)
+        deaths_list = g.dead
+        survivors_list = g.alive
         if not raw_scene:
             await channel.send("⚠️ Scene generation failed.")
             return
@@ -1034,6 +1042,14 @@ async def setup(bot: commands.Bot):
     print("✅ ZombieGame cog loaded")
 
 # Utilities
+def auto_track_stats(raw_scene: str, g):
+    for name in g.alive[:]:
+        if name in raw_scene and any(word in raw_scene.lower() for word in [
+            "dies", "killed", "slumps", "blood", "screams", "dragged", "crushed", "torn", "bitten", "devoured"
+        ]):
+            g.dead.append(name)
+            g.alive.remove(name)
+
 def infer_deaths_from_narration(bullets):
     deaths = []
     for line in bullets:
