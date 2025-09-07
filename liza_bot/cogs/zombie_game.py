@@ -32,6 +32,7 @@ OPENROUTER_API_KEYS = [
     os.getenv("OPENROUTER_API_KEY_4"),
     os.getenv("OPENROUTER_API_KEY_5"),
     os.getenv("OPENROUTER_API_KEY_6"),
+    os.getenv("OPENROUTER_API_KEY_7")
 ]
 OPENROUTER_API_KEYS = [k for k in OPENROUTER_API_KEYS if k]
 key_cooldowns: dict[str, datetime] = {}
