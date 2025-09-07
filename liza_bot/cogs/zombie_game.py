@@ -1105,9 +1105,6 @@ class ZombieGame(commands.Cog):
 
         await channel.send(f"━━━━━━━━━━━━━━━━━━━━━━━\n     🩸 End of Round {g.round} 🩸\n━━━━━━━━━━━━━━━━━━━━━━━")
 
-        deaths_match = re.search(r"Deaths:\s*(.*?)\n\s*Survivors:", raw_outcome, re.DOTALL | re.IGNORECASE)
-        survivors_match = re.search(r"Survivors:\s*(.*)", raw_outcome, re.DOTALL | re.IGNORECASE)
-
         sentences = re.split(r'(?<=[.!?])\s+', raw_outcome)
         bulleted_narration = [
             format_bullet(bold_character_names(s.strip().lstrip("•")))
@@ -1313,14 +1310,6 @@ def auto_track_deaths(raw_scene: str, g):
                     g.dead.append(name)
                     g.alive.remove(name)
                     print(f"☠️ {name} marked dead based on bullet: {bullet.strip()}")
-
-def infer_deaths_from_narration(bullets):
-    deaths = []
-    for line in bullets:
-        for name in CHARACTER_INFO:
-            if name in line and re.search(r"(fall|drag|vanish|seized|pulled|die|dead|choked|struggle is brief|killed|perished|succumbed)", line, re.IGNORECASE):
-                deaths.append(name)
-    return list(set(deaths))
 
 def merge_broken_quotes(lines):
     merged = []
