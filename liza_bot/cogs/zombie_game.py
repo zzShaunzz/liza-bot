@@ -1001,7 +1001,11 @@ class ZombieGame(commands.Cog):
         raw_summary = await generate_scene_summary(recap_prompt, g)
         summary_bullets = [
             format_bullet(bold_character_names(line.lstrip("•").strip()))
-            for line in raw_summary.splitlines()
+            if not raw_summary:
+                await channel.send("⚠️ No recap was generated.")
+                return
+            
+            for line in raw_summary.splitlines():
             if line.strip() and line.strip() != "•"
         ]
 
