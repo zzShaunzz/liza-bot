@@ -371,6 +371,12 @@ async def animate_game_start(message: discord.Message, stop_event: asyncio.Event
             logger.warning(f"Game start animation failed: {e}")
             break
 
+    # Once stop_event is set, announce game start
+    try:
+        await message.edit(content="✅ **Game has started!**")
+    except Exception as e:
+        logger.warning(f"Failed to send game start confirmation: {e}")
+
 async def countdown_message(message: discord.Message, seconds: int, prefix: str = "", final_text: str = None):
     for i in range(seconds, 0, -1):
         if active_game and active_game.terminated:
@@ -815,15 +821,20 @@ class ZombieGame(commands.Cog):
 
         await channel.send("━━━━━━━━━━━━━━\n🔀 **Choices**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, g.options, delay=4.5)
-
+        
         choices_msg = await channel.send("━━━━━━━━━━━━━━\n🗳️ React to vote!")
         await choices_msg.add_reaction("1️⃣")
         await choices_msg.add_reaction("2️⃣")
+        
         countdown_msg = await channel.send("⏳ Voting ends in...")
         await countdown_message(countdown_msg, 20, "⏳ Voting ends in...")
+        
+        # ✅ Add this line right after countdown finishes
+        await channel.send("🗳️ **Voting has finished!**")
+        
         choices_msg = await channel.fetch_message(choices_msg.id)
         votes = await tally_votes(choices_msg)
-
+        
         if votes["1️⃣"] == 0 and votes["2️⃣"] == 0:
             await channel.send("No votes cast. Game over.")
             end_game()
@@ -869,7 +880,7 @@ class ZombieGame(commands.Cog):
 
         outcome_text = clean_and_space_bullets(raw_outcome)
 
-        await channel.send(f"🩸━━━━━━━━━━━━━━━━━━━━━━━🩸\n**End of Round {g.round}**\n🩸━━━━━━━━━━━━━━━━━━━━━━━🩸")
+        await channel.send(f"━━━━━━━━━━━━━━━━━━━━━━━\n**End of Round {g.round}**\n━━━━━━━━━━━━━━━━━━━━━━━")
 
         deaths_match = re.search(r"Deaths:\s*(.*?)\n\s*Survivors:", raw_outcome, re.DOTALL | re.IGNORECASE)
         survivors_match = re.search(r"Survivors:\s*(.*)", raw_outcome, re.DOTALL | re.IGNORECASE)
@@ -1043,16 +1054,23 @@ async def setup(bot: commands.Bot):
 
 # Utilities
 def auto_track_deaths(raw_scene: str, g):
-    bullets = raw_scene.split("•")[1:]  # Skip the empty first split
+    bullets = raw_scene.split("•")[1:]
 
     for bullet in bullets:
         cleaned = bullet.strip().lower()
-        for name in g.alive[:]:  # Copy to avoid mutation
+        for name in g.alive[:]:
             if re.search(rf"\b{name.lower()}\b", cleaned):
-                if any(phrase in cleaned for phrase in [
-                    "vanish", "dragged under", "pulled beneath", "final breath", "crushed", "dissolved",
-                    "slumps", "sinks", "submerged", "yanked", "gone", "lost", "devoured", "bitten", "torn"
-                ]) or cleaned.endswith(("slumps.", "vanishes.", "is gone.", "is lost.", "is dragged under.", "is crushed.")):
+                # Check for passive structure or emotional finality
+                is_passive = any(phrase in cleaned for phrase in [
+                    "is dragged", "is pulled", "is lost", "is gone", "is crushed", "is seized", "is consumed",
+                    "vanishes", "disappears", "sacrifice", "final breath", "no longer", "one less"
+                ])
+                ends_finally = cleaned.endswith((
+                    "is gone.", "is lost.", "vanishes.", "slumps.", "is crushed.", "is dragged under.",
+                    "his scream is cut short.", "her scream is cut short.", "his cry fades.", "her cry fades."
+                ))
+
+                if is_passive or ends_finally:
                     g.dead.append(name)
                     g.alive.remove(name)
                     print(f"☠️ {name} marked dead based on bullet: {bullet.strip()}")
