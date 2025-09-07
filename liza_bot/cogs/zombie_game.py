@@ -34,24 +34,27 @@ OPENROUTER_API_KEYS = [
     os.getenv("OPENROUTER_API_KEY_5"),
     os.getenv("OPENROUTER_API_KEY_6"),
 ]
-OPENROUTER_API_KEYS = [k for k in OPENROUTER_API_KEYS if k]
+OPENROUTER_API_KEYS = [key for key in OPENROUTER_API_KEYS if key]
 key_cooldowns = {}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🔁 OpenRouter Key Rotation
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def is_key_on_cooldown(key):
+def is_key_on_cooldown(key: str) -> bool:
     return key in key_cooldowns and datetime.utcnow() < key_cooldowns[key]
 
-def set_key_cooldown(key, seconds=600):
+def set_key_cooldown(key: str, seconds: int = 600):
     key_cooldowns[key] = datetime.utcnow() + timedelta(seconds=seconds)
 
-async def send_openrouter_request(payload):
+async def send_openrouter_request(payload: dict) -> dict:
     tried = set()
     for key in OPENROUTER_API_KEYS:
         if key in tried or is_key_on_cooldown(key):
             continue
-        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json"
+        }
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
@@ -65,16 +68,16 @@ async def send_openrouter_request(payload):
         except httpx.HTTPStatusError as e:
             tried.add(key)
             if e.response.status_code in (401, 429):
-                logger.warning(f"Key failed {e.response.status_code}, cooling down.")
+                logger.warning(f"Key {key[:6]} failed with {e.response.status_code}, cooling down.")
                 set_key_cooldown(key)
                 continue
             raise
-    raise RuntimeError("All OpenRouter keys exhausted.")
+    raise RuntimeError("All OpenRouter keys exhausted or invalid.")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🧠 AI Text Generator
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async def generate_ai_text(messages, temperature=0.8):
+async def generate_ai_text(messages: list, temperature: float = 0.8) -> str | None:
     if active_game and active_game.terminated:
         return None
     payload = {"model": MODEL, "messages": messages, "temperature": temperature}
@@ -99,7 +102,7 @@ async def animate_game_start(message: discord.Message, stop_event: asyncio.Event
         try:
             await message.edit(content=frames[i % len(frames)])
         except Exception as e:
-            logger.warning(f"Animation failed: {e}")
+            logger.warning(f"Animation edit failed: {e}")
             break
         i += 1
         await asyncio.sleep(0.5)
@@ -208,11 +211,11 @@ class GameState:
         self.last_choice = None
         self.options = []
         self.stats = {
-            "helped": defaultdict(int),
+            "helped":    defaultdict(int),
             "resourceful": defaultdict(int),
-            "sinister": defaultdict(int),
+            "sinister":  defaultdict(int),
             "dignified": defaultdict(int),
-            "bonds": defaultdict(int),
+            "bonds":     defaultdict(int),
             "conflicts": defaultdict(int)
         }
         self.story_context = ""
@@ -226,8 +229,24 @@ def end_game():
     if active_game:
         active_game.terminated = True
 
-def is_active():
+def is_active() -> bool:
     return active_game is not None and not active_game.terminated
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🌍 Game Lifecycle Helpers
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async def generate_unique_setting() -> str:
+    messages = [
+        {"role": "system", "content": "You are a horror storyteller."},
+        {"role": "user", "content": "🎬 Generate a unique setting for a zombie survival story. One vivid, eerie sentence."}
+    ]
+    return await generate_ai_text(messages)
+
+async def start_game_async(user_id: int):
+    global active_game
+    active_game = GameState(user_id)
+    active_game.story_seed = await generate_unique_setting()
+    active_game.story_context = f"Setting: {active_game.story_seed}\n"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🧩 Prompt Builders
@@ -240,11 +259,8 @@ def build_scene_prompt() -> str:
         "🎬 Generate a cinematic zombie survival scene in bullet points."
     )
 
-def build_scene_summary_prompt(scene_text: str) -> str:
-    return (
-        f"{scene_text}\n"
-        "📝 Summarize the above scene in one concise paragraph."
-    )
+def build_scene_summary_prompt(scene: str) -> str:
+    return f"{scene}\n📝 Summarize the above scene in one concise paragraph."
 
 def build_health_prompt() -> str:
     g = active_game
@@ -260,21 +276,23 @@ def build_group_dynamics_prompt() -> str:
         "💬 Describe the current group dynamics among the survivors."
     )
 
-def build_dilemma_prompt(raw_scene: str, raw_health: str) -> str:
+def build_dilemma_prompt(scene: str, health: str) -> str:
     return (
-        f"{raw_scene}\n\n{raw_health}\n"
+        f"{scene}\n\n{health}\n"
         "🧠 Present a dilemma based on the above. Provide two options labeled 1. and 2."
     )
 
-def build_choices_prompt(dilemma_text: str) -> str:
+def build_choices_prompt(dilemma: str) -> str:
     return (
-        f"{dilemma_text}\n"
+        f"{dilemma}\n"
         "🔀 Provide two numbered choices (1. and 2.) for the group to vote on."
     )
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ⏱️ Speed Control
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ⏱️ Speed, Health, Emojis, and Formatting Utilities
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Speed Control
 SPEED_MULTIPLIERS = {
     "normal": 1.0,
     "fast": 0.6,
@@ -283,12 +301,12 @@ SPEED_MULTIPLIERS = {
 current_speed = "normal"
 
 def get_delay(base: float = 1.0) -> float:
+    """Compute a delay adjusted by the current speed multiplier."""
     return base * SPEED_MULTIPLIERS.get(current_speed, 1.0)
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🩺 Health Tier Assignment
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Health Tier Assignment
 def assign_health_tier(index: int) -> str:
+    """Assign a colored emoji tier based on index (0=green, 1=yellow, else=red)."""
     if index == 0:
         return "🟢"
     elif index == 1:
@@ -296,9 +314,7 @@ def assign_health_tier(index: int) -> str:
     else:
         return "🔴"
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧍 Character Emoji Mapping
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Character Emoji Mapping
 CHARACTER_EMOJIS = {
     "Shaun Sadsarin": "<:hawhar:>",
     "Addison Sadsarin": "<:feeling_silly:>",
@@ -314,70 +330,76 @@ CHARACTER_EMOJIS = {
     "Jordan": "<:agua:>"
 }
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🔠 Bolding Logic (with possessives)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Bolding Logic (with possessive support)
 def bold_name(name: str) -> str:
+    """Wrap a character name in Discord markdown bold."""
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
+    """
+    Bold all occurrences of full character names, first names,
+    and their possessive forms (straight and curly apostrophes).
+    """
     if not isinstance(text, str):
         return ""
-    # Remove any existing **…**
+    # Remove existing bold markers
     text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
     for full_name in CHARACTER_INFO:
         first_name = full_name.split()[0]
-        possessives = [
+        variants = [
             f"{full_name}'s", f"{full_name}’s",
-            f"{first_name}'s", f"{first_name}’s"
+            f"{first_name}'s", f"{first_name}’s",
+            full_name,
+            first_name
         ]
-        for variant in possessives:
-            text = re.sub(
-                rf"\b{re.escape(variant)}\b",
-                f"**{variant}**",
-                text
-            )
-        # Bold full name and first name
-        text = re.sub(rf"\b{re.escape(full_name)}\b", f"**{full_name}**", text)
-        text = re.sub(rf"\b{re.escape(first_name)}\b", f"**{first_name}**", text)
+        for variant in variants:
+            escaped = re.escape(variant)
+            text = re.sub(rf"\b{escaped}\b", f"**{variant}**", text)
     return text
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# • Bullet Formatting
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Bullet Formatting Utilities
 def format_bullet(text: str) -> str:
+    """Normalize a single line into a bullet point."""
     return f"• {text.strip().lstrip('•-').strip()}"
 
 def split_into_sentences(text: str) -> list:
+    """Split a paragraph into sentences based on punctuation."""
     return re.split(r'(?<=[.!?])\s+', text.strip())
 
 def enforce_bullets(text: str) -> list:
+    """
+    Convert freeform text into a list of bullet lines.
+    Merges wrapped lines, bolds names, and ensures spacing.
+    """
     lines = text.splitlines()
-    bullets, current = [], ""
+    bullets = []
+    buffer = ""
     for line in lines:
         stripped = line.strip().lstrip("•").lstrip("*")
         if not stripped:
             continue
         is_bullet = line.strip().startswith(("•", "*"))
-        name_hit = any(name.split()[0] in stripped for name in CHARACTER_INFO)
-        if is_bullet or name_hit:
-            if current:
-                bullets.append(f"• {bold_character_names(current.strip())}")
-            current = stripped
+        has_name = any(name.split()[0] in stripped for name in CHARACTER_INFO)
+        if is_bullet or has_name:
+            if buffer:
+                bullets.append(f"• {bold_character_names(buffer.strip())}")
+            buffer = stripped
         else:
-            current += " " + stripped
-    if current:
-        bullets.append(f"• {bold_character_names(current.strip())}")
-    # Split long bullets into sentences if no character name present
+            buffer += " " + stripped
+    if buffer:
+        bullets.append(f"• {bold_character_names(buffer.strip())}")
+
+    # Further split bullets without character names into sentences
     final = []
     for b in bullets:
-        has_name = any(name.split()[0] in b for name in CHARACTER_INFO)
-        if not has_name:
-            for sent in split_into_sentences(b):
+        plain = re.sub(r"\*\*(.*?)\*\*", r"\1", b)
+        if not any(name.split()[0] in plain for name in CHARACTER_INFO):
+            for sent in split_into_sentences(plain):
                 if sent:
                     final.append(f"• {sent.strip()}")
         else:
             final.append(b)
+
     # Insert blank line after each bullet for streaming
     spaced = []
     for b in final:
@@ -385,19 +407,22 @@ def enforce_bullets(text: str) -> list:
         spaced.append("")
     return spaced
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 💬 Bullet Streaming
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Bullet Streaming
 async def stream_bullets_in_message(
     channel: discord.TextChannel,
     bullets: list,
     delay: float = 0.8
 ):
+    """
+    Send an initial placeholder message, then edit it line-by-line
+    to stream bullet points with pauses.
+    """
     try:
         msg = await channel.send("...")
     except Exception as e:
-        logger.warning(f"Initial message failed: {e}")
+        logger.warning(f"Failed to send initial stream message: {e}")
         return
+
     content = ""
     for bullet in bullets:
         line = bullet.strip()
@@ -409,12 +434,12 @@ async def stream_bullets_in_message(
         try:
             await msg.edit(content=content.strip())
         except Exception as e:
-            logger.warning(f"Stream edit failed: {e}")
+            logger.warning(f"Failed to edit stream message: {e}")
             return
         await asyncio.sleep(delay)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧟‍♂️ ZombieGame Commands
+# 🧟‍♂️ ZombieGame Commands & Game Start
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 class ZombieGame(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -533,8 +558,6 @@ class ZombieGame(commands.Cog):
             return
 
         current_speed = mode
-        if is_active():
-            active_game.speed = mode
         await ctx.send(f"⏱️ Speed set to **{mode}**")
 
     @speed_legacy.error
@@ -555,8 +578,6 @@ class ZombieGame(commands.Cog):
             return
 
         current_speed = mode
-        if is_active():
-            active_game.speed = mode
         await interaction.response.send_message(f"⏱️ Speed set to **{mode}**", ephemeral=True)
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -688,7 +709,6 @@ class ZombieGame(commands.Cog):
             last_counts = counts
             await asyncio.sleep(get_delay(1.0))
 
-        # Determine winning choice
         winner = "1️⃣" if last_counts["1️⃣"] >= last_counts["2️⃣"] else "2️⃣"
         g.last_choice = g.options[0] if winner == "1️⃣" else g.options[1]
         await channel.send("🗳️ **Voting has finished!**")
@@ -726,7 +746,6 @@ class ZombieGame(commands.Cog):
         narration = enforce_bullets(bold_character_names(raw_outcome))
         cleaned = []
         for line in narration:
-            # Split compound bullets if needed
             m = re.search(r"(\*\*.*?\*\*:.*?[a-z])\s+(?=[A-Z])", line)
             if m:
                 idx = m.end()
@@ -734,7 +753,7 @@ class ZombieGame(commands.Cog):
                 cleaned.append(line[idx:].strip())
             else:
                 cleaned.append(line)
-        
+
         # Determine death & survivor lists
         if deaths_match:
             deaths_list = enforce_bullets(deaths_match.group(1))
@@ -799,26 +818,22 @@ class ZombieGame(commands.Cog):
         g = active_game
         await channel.send("━━━━━━━━━━━━━━\n📜 **Game Summary**\n━━━━━━━━━━━━━━")
 
-        # Deaths recap
-        valid_deaths = [name for name in g.dead if name]
-        deaths_block = [f"• {bold_name(name)}" for name in valid_deaths] or ["• None"]
+        deaths_block = [f"• {bold_name(name)}" for name in g.dead] or ["• None"]
         await channel.send("🪦 **Deaths (most recent first)**")
         await stream_bullets_in_message(channel, deaths_block, delay=get_delay(4.5))
 
-        # Top stats
         def top_or_none(stat):
             return get_top_stat(g.stats.get(stat, {})) if g.stats.get(stat) else "None"
 
-        most_helpful    = top_or_none("helped")
+        most_helpful     = top_or_none("helped")
         most_resourceful = top_or_none("resourceful")
-        most_sinister  = top_or_none("sinister")
-        most_dignified = top_or_none("dignified")
+        most_sinister    = top_or_none("sinister")
+        most_dignified   = top_or_none("dignified")
 
-        # Bonds & Conflicts
-        sorted_bonds    = sorted(g.stats.get("bonds", {}).items(), key=lambda x: x[1], reverse=True)
-        sorted_conflicts = sorted(g.stats.get("conflicts", {}).items(), key=lambda x: x[1], reverse=True)
-        bond_pair       = sorted_bonds[0][0] if sorted_bonds else ("None","None")
-        conflict_pair   = sorted_conflicts[0][0] if sorted_conflicts else ("None","None")
+        bonds     = sorted(g.stats.get("bonds", {}).items(), key=lambda x: x[1], reverse=True)
+        conflicts = sorted(g.stats.get("conflicts", {}).items(), key=lambda x: x[1], reverse=True)
+        bond_pair     = bonds[0][0] if bonds else ("None", "None")
+        conflict_pair = conflicts[0][0] if conflicts else ("None", "None")
 
         final_stats = [
             f"🏅 Most helpful:\n• {bold_name(most_helpful)}",
@@ -828,13 +843,11 @@ class ZombieGame(commands.Cog):
             f"🤝 Greatest bond:\n• {bold_name(bond_pair[0])} & {bold_name(bond_pair[1])}",
             f"⚔️ Biggest conflict:\n• {bold_name(conflict_pair[0])} vs {bold_name(conflict_pair[1])}"
         ]
-        # Remove any 'None' stats
-        final_stats = [stat for stat in final_stats if "None" not in stat]
+        final_stats = [line for line in final_stats if "None" not in line]
 
         await channel.send("━━━━━━━━━━━━━━\n📊 **Final Stats**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, final_stats, delay=get_delay(4.5))
 
-        # Cinematic recap
         recap_prompt = (
             f"{g.story_context}\n"
             f"Deaths: {', '.join(g.dead)}\n"
@@ -869,9 +882,9 @@ def auto_track_stats(text: str, g: GameState):
     if not text:
         return
     patterns = {
-        "helped":    r"(help|assist|protect|save)",
+        "helped": r"(help|assist|protect|save)",
         "resourceful": r"(improvise|solve|navigate|strategize)",
-        "sinister":  r"(betray|attack|abandon|sabotage)",
+        "sinister": r"(betray|attack|abandon|sabotage)",
         "dignified": r"(grace|sacrifice|honor|calm)"
     }
     for name in CHARACTER_INFO:
@@ -901,23 +914,6 @@ def infer_deaths_from_narration(bullets: list) -> list:
             if name in line and re.search(r"(fall|drag|die|dead|choke|seize)", line, re.IGNORECASE):
                 deaths.append(name)
     return list(set(deaths))
-
-def merge_broken_quotes(lines: list) -> list:
-    merged, buffer = [], ""
-    for line in lines:
-        txt = line.strip()
-        if txt.startswith("•") and not txt.endswith(('"', '.', '!', '?')):
-            buffer = txt
-        elif buffer:
-            buffer += " " + txt
-            if txt.endswith(('"', '.', '!', '?')):
-                merged.append(buffer)
-                buffer = ""
-        else:
-            merged.append(txt)
-    if buffer:
-        merged.append(buffer)
-    return merged
 
 async def tally_votes(message: discord.Message) -> dict:
     counts = {"1️⃣": 0, "2️⃣": 0}
