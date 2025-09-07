@@ -214,6 +214,17 @@ CHARACTER_EMOJIS = {
     "Jordan": "<:agua:>"
 }
 
+# ---------- Health Tier Mapping ----------
+def infer_health_tier(status: str) -> str:
+    lowered = status.lower()
+    if any(word in lowered for word in ["calm", "focused", "ready", "alert", "steady"]):
+        return "🟢"
+    if any(word in lowered for word in ["trembling", "bleeding", "faltering", "shaky", "injured"]):
+        return "🟡"
+    if any(word in lowered for word in ["panicked", "barely", "collapsed", "unconscious", "critical"]):
+        return "🔴"
+    return "🟡"
+
 # ---------- Game State ----------
 class GameState:
     def __init__(self, initiator: int):
@@ -267,18 +278,10 @@ def bold_name(name: str) -> str:
 
 def bold_character_names(text: str) -> str:
     for name in CHARACTER_INFO:
-        # Possessive fix: match full name with optional 's
-        text = re.sub(
-            rf"\b({re.escape(name)}'s)\b",
-            r"**\1**",
-            text
-        )
-        # Full name match
-        text = re.sub(
-            rf"\b({re.escape(name)})\b",
-            r"**\1**",
-            text
-        )
+        # Bold possessives like "Shaun Sadsarin's"
+        text = re.sub(rf"\b({re.escape(name)}'s)\b", r"**\1**", text)
+        # Bold full name matches
+        text = re.sub(rf"\b({re.escape(name)})\b", r"**\1**", text)
     return text
 
 # ---------- Bullet Formatting ----------
@@ -472,11 +475,6 @@ async def generate_scene(g, deaths_list, survivors_list):
         {"role": "user", "content": build_scene_prompt()}
     ])
     auto_track_deaths(raw_scene, g)
-    for name in g.alive:
-        if name in raw_scene and any(word in raw_scene.lower() for word in [
-            "dies", "killed", "slumps", "blood", "screams", "dragged", "crushed", "torn", "bitten", "devoured"
-        ]):
-            logger.warning(f"⚠️ Mismatch: {name} described as dead but marked alive.")
     auto_track_relationships(raw_scene, g)
     return raw_scene
 
@@ -681,36 +679,14 @@ class ZombieGame(commands.Cog):
         raw_bolded_health = bold_character_names(raw_health)
         enforced_health = enforce_bullets(raw_bolded_health)
 
-        cleaned_health_lines = []
-        buffer = ""
-        for line in enforced_health:
-            stripped = line.strip()
-            if stripped.endswith(":"):
-                buffer = stripped
-                continue
-            elif buffer:
-                cleaned_health_lines.append(f"{buffer} {stripped}")
-                buffer = ""
-                continue
-            elif ":" in stripped:
-                name, status = stripped.split(":", 1)
-                status_parts = re.split(r'(?<=[a-z])\s+(?=[A-Z])', status.strip(), maxsplit=1)
-                descriptor = status_parts[0].strip()
-                cleaned_line = f"{name.strip()}: {descriptor}"
-                cleaned_health_lines.append(cleaned_line)
-                if len(status_parts) > 1:
-                    ambient = status_parts[1].strip()
-                    cleaned_health_lines.append(ambient)
-            else:
-                cleaned_health_lines.append(stripped)
-
         health_bullets = []
-        for line in cleaned_health_lines:
+        for line in enforced_health:
             if ":" in line:
                 name, status = line.split(":", 1)
+                tier = infer_health_tier(status.strip())
                 emoji = CHARACTER_EMOJIS.get(name.strip(), "")
-                formatted = f"{emoji} {bold_name(name.strip())}: {status.strip()}"
-                health_bullets.append(format_bullet(formatted))
+                formatted = f"{emoji} {bold_name(name.strip())} {tier}: {status.strip()}"
+                health_bullets.append(f"• {formatted.strip()}")
             else:
                 health_bullets.append(format_bullet(line.strip()))
 
