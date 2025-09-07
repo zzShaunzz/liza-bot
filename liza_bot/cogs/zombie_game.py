@@ -330,18 +330,19 @@ async def stream_bullets_in_message(
         cleaned = bullet.strip()
         if not cleaned or cleaned == "•":
             continue
-
+    
         # Ensure bullet ends with punctuation for clean spacing
-        if not cleaned.endswith(('.', '!', '?', '"')):
+        if not cleaned.endswith(('.', '!', '?', '"', '…', '...')):
             cleaned += "."
-
-        content += f"{cleaned}\n\n"
+    
+        content += f"{cleaned}\n\n"  # Double line break for dramatic spacing
+    
         try:
             await msg.edit(content=content.strip())
         except Exception as e:
-            logger.warning(f"Edit failed: {e}")
+            logger.warning(f"Edit failed during bullet stream: {cleaned} — {e}")
             return
-
+    
         await asyncio.sleep(delay)
 
 async def game_countdown_message(channel: discord.TextChannel, seconds: int, prefix: str = "", final_message: str = None):
@@ -635,13 +636,14 @@ class ZombieGame(commands.Cog):
         # Format bullets
         scene_bullets = [
             format_bullet(bold_character_names(s.strip().lstrip("•")))
-            for s in sentences
-            if s.strip() and s.strip() != "•"
+            for s in scene_text.split("•")
+            if s.strip()
         ]
 
         # Fuse quote bullets with speaker actions
         fused_bullets = []
         quote_buffer = ""
+        quote_ready = False
         
         for line in scene_bullets:
             stripped = line.strip()
@@ -650,18 +652,27 @@ class ZombieGame(commands.Cog):
             if stripped.startswith('"') or quote_buffer:
                 quote_buffer += (" " if quote_buffer else "") + stripped
         
-                # If quote ends, hold it until next speaker action
+                # Mark quote as ready if it ends
                 if stripped.endswith('"') or stripped.endswith(('.', '!', '?')):
-                    continue
-                else:
-                    continue
+                    quote_ready = True
+                continue  # Wait for next line to fuse into
         
-            # If we have a quote waiting, fuse it into this line
+            # If we have a quote waiting, fuse it into this line — only if it's a speaker action
             if quote_buffer:
-                fused_bullets.append(f"{stripped} {quote_buffer}".strip())
+                if ":" in stripped:  # Likely a character line
+                    fused_bullets.append(f"{stripped} {quote_buffer}".strip())
+                else:
+                    # No speaker line — flush quote first, then ambient
+                    fused_bullets.append(quote_buffer.strip())
+                    fused_bullets.append(stripped)
                 quote_buffer = ""
+                quote_ready = False
             else:
                 fused_bullets.append(stripped)
+        
+        # Final flush: if quote_buffer still exists, append it
+        if quote_buffer:
+            fused_bullets.append(quote_buffer.strip())
         
         scene_bullets = fused_bullets
 
