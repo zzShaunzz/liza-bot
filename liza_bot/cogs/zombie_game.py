@@ -620,8 +620,8 @@ class ZombieGame(commands.Cog):
 
         # Phase 1: Scene
         raw_scene = await generate_scene(g, deaths_list, survivors_list)
-        deaths_list = g.dead
-        survivors_list = g.alive
+        deaths_list = [f"• {bold_name(n)}" for n in g.dead]
+        survivors_list = [f"• {bold_name(n)}" for n in g.alive]
         if not raw_scene:
             await channel.send("⚠️ Scene generation failed.")
             return
@@ -1043,10 +1043,13 @@ async def setup(bot: commands.Bot):
 
 # Utilities
 def auto_track_stats(raw_scene: str, g):
-    for name in g.alive[:]:
-        if name in raw_scene and any(word in raw_scene.lower() for word in [
-            "dies", "killed", "slumps", "blood", "screams", "dragged", "crushed", "torn", "bitten", "devoured"
-        ]):
+    death_keywords = [
+        "dies", "killed", "slumps", "blood", "screams", "dragged", "crushed", "torn", "murdered", "disintegrated", "perishes",
+        "ceases", "devoured", "final breath", "dissolved", "corrosive", "acid", "eaten", "misted crimson"
+    ]
+
+    for name in g.alive[:]:  # Copy to avoid mutation during iteration
+        if name in raw_scene and any(kw in raw_scene.lower() for kw in death_keywords):
             g.dead.append(name)
             g.alive.remove(name)
 
