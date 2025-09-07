@@ -40,6 +40,17 @@ OPENROUTER_API_KEYS = [
 OPENROUTER_API_KEYS = [key for key in OPENROUTER_API_KEYS if key]
 key_cooldowns = {}
 
+# Game speed settings
+SPEED_SETTINGS = {
+    1.0: {"scene": 4.7, "health": 2.0, "dynamics": 3.5, "dilemma": 5.0, "choices": 4.5, "summary": 4.5, "stats": 4.5},
+    1.5: {"scene": 3.1, "health": 1.3, "dynamics": 2.3, "dilemma": 3.3, "choices": 3.0, "summary": 3.0, "stats": 3.0},
+    2.0: {"scene": 2.4, "health": 1.0, "dynamics": 1.8, "dilemma": 2.5, "choices": 2.3, "summary": 2.3, "stats": 2.3}
+}
+
+# Global variables
+active_game = None
+current_speed = 1.0
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🧠 OpenRouter Request with Key Rotation
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -212,13 +223,6 @@ CHARACTER_INFO = {
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
 
-# Game speed settings
-SPEED_SETTINGS = {
-    1.0: {"scene": 4.7, "health": 2.0, "dynamics": 3.5, "dilemma": 5.0, "choices": 4.5, "summary": 4.5, "stats": 4.5},
-    1.5: {"scene": 3.1, "health": 1.3, "dynamics": 2.3, "dilemma": 3.3, "choices": 3.0, "summary": 3.0, "stats": 3.0},
-    2.0: {"scene": 2.4, "health": 1.0, "dynamics": 1.8, "dilemma": 2.5, "choices": 2.3, "summary": 2.3, "stats": 2.3}
-}
-
 # ---------- Game State ----------
 class GameState:
     def __init__(self, initiator: int):
@@ -295,9 +299,6 @@ class GameState:
         """Delete the save file"""
         if os.path.exists(self.save_file):
             os.remove(self.save_file)
-
-active_game = None
-current_speed = 1.0
 
 def end_game():
     global active_game
@@ -577,9 +578,7 @@ def build_choices_prompt(dilemma_text):
     )
 
 # ---------- AI Generators ----------
-async def generate_scene(g, deaths_list, survivors_list):
-    g.dead = deaths_list
-    g.alive = survivors_list
+async def generate_scene(g):
     raw_scene = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator generating cinematic zombie survival scenes."},
         {"role": "user", "content": build_scene_prompt()}
@@ -782,6 +781,8 @@ class ZombieGame(commands.Cog):
 
     @commands.command(name="speed")
     async def speed_legacy(self, ctx: commands.Context, speed: float = None):
+        global current_speed
+        
         if not is_active():
             await ctx.send("⚠️ No active zombie game to adjust speed.")
             return
@@ -794,7 +795,6 @@ class ZombieGame(commands.Cog):
             await ctx.send("⚠️ Invalid speed. Use 1.0, 1.5, or 2.0")
             return
             
-        global current_speed
         current_speed = speed
         active_game.game_speed = speed
         active_game.save()
@@ -803,6 +803,8 @@ class ZombieGame(commands.Cog):
     @app_commands.command(name="speed", description="Adjust game speed")
     @app_commands.describe(speed="Game speed multiplier")
     async def speed_slash(self, interaction: Interaction, speed: float):
+        global current_speed
+        
         if not is_active():
             await interaction.response.send_message("⚠️ No active zombie game to adjust speed.", ephemeral=True)
             return
@@ -811,7 +813,6 @@ class ZombieGame(commands.Cog):
             await interaction.response.send_message("⚠️ Invalid speed. Use 1.0, 1.5, or 2.0", ephemeral=True)
             return
             
-        global current_speed
         current_speed = speed
         active_game.game_speed = speed
         active_game.save()
@@ -829,7 +830,7 @@ class ZombieGame(commands.Cog):
         g.save()
 
         # Phase 1: Scene
-        raw_scene = await generate_scene(g, g.dead, g.alive)
+        raw_scene = await generate_scene(g)
         if not raw_scene:
             await channel.send("⚠️ Scene generation failed.")
             return
@@ -1205,7 +1206,7 @@ class ZombieGame(commands.Cog):
         await stream_bullets_in_message(channel, deaths_block, "stats")
 
         def safe_top(stat_dict):
-            return get_top_stat(stat_dict) if stat_dict else "None"
+            return max(stat_dict.items(), key=lambda x: x[1])[0] if stat_dict else "None"
 
         most_helpful = safe_top(g.stats.get("helped", {}))
         most_sinister = safe_top(g.stats.get("sinister", {}))
@@ -1254,11 +1255,6 @@ class ZombieGame(commands.Cog):
         await channel.send("🧠 **Scene Summary**")
         await stream_bullets_in_message(channel, summary_bullets, "summary")
         await channel.send("🎬 Thanks for surviving (or not) the zombie apocalypse. Until next time...")
-
-# Cog setup
-async def setup(bot: commands.Bot):
-    await bot.add_cog(ZombieGame(bot))
-    print("✅ ZombieGame cog loaded")
 
 # Utilities
 def auto_track_deaths(raw_scene: str, g):
@@ -1340,3 +1336,8 @@ async def tally_votes(message):
                 if not user.bot:
                     votes[reaction.emoji] += 1
     return votes
+
+# Cog setup
+async def setup(bot: commands.Bot):
+    await bot.add_cog(ZombieGame(bot))
+    print("✅ ZombieGame cog loaded")
