@@ -239,7 +239,7 @@ class GameState:
         self.round = 0
         self.alive = CHARACTERS.copy()
         self.dead = []
-        self.death_reasons = {}  # name → reason
+        self.death_reasons = {}
         self.last_choice = None
         self.last_events = ""
         self.options = []
@@ -286,9 +286,21 @@ def bold_name(name: str) -> str:
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
-    for name in CHARACTER_INFO:
-        text = re.sub(rf"\b({re.escape(name)}'s)\b", r"**\1**", text)
-        text = re.sub(rf"\b({re.escape(name)})\b", r"**\1**", text)
+    if not isinstance(text, str):
+        return ""
+    for full_name in CHARACTER_INFO:
+        first_name = full_name.split()[0]
+
+        # Possessive forms — straight and curly apostrophes
+        for variant in [f"{full_name}'s", f"{full_name}’s", f"{first_name}'s", f"{first_name}’s"]:
+            text = re.sub(rf"\b({re.escape(variant)})\b", r"**\1**", text)
+
+        # Non-possessive full name
+        text = re.sub(rf"\b({re.escape(full_name)})\b", r"**\1**", text)
+
+        # Non-possessive first name
+        text = re.sub(rf"\b({re.escape(first_name)})\b", r"**\1**", text)
+
     return text
 
 # ---------- Bullet Formatting ----------
@@ -381,20 +393,6 @@ async def countdown_message(message: discord.Message, seconds: int, prefix: str 
             await message.edit(content=final_text)
         except Exception as e:
             logger.warning(f"Final edit failed: {e}")
-
-async def game_countdown_message(channel: discord.TextChannel, seconds: int, prefix: str = "", final_message: str = None):
-    try:
-        msg = await channel.send(f"{prefix} {seconds}")
-        for i in range(seconds - 1, 0, -1):
-            if active_game and active_game.terminated:
-                return
-            await asyncio.sleep(get_delay(1.0))
-            await msg.edit(content=f"{prefix} {i}")
-        await asyncio.sleep(get_delay(1.0))
-        if final_message:
-            await msg.edit(content=final_message)
-    except Exception as e:
-        logger.warning(f"Game countdown failed: {e}")
 
 async def animate_game_start(message: discord.Message, stop_event: asyncio.Event, base_text: str = "🧟 Game starting"):
     dots = ["", ".", "..", "..."]
@@ -541,10 +539,7 @@ class ZombieGame(commands.Cog):
         if not active_game.dead:
             await ctx.send("💀 No deaths yet.")
             return
-        lines = []
-        for name in active_game.dead:
-            reason = active_game.death_reasons.get(name, "Unknown cause")
-            lines.append(f"• {bold_name(name)}: {reason}")
+        lines = [f"• {bold_name(name)}: {active_game.death_reasons.get(name, 'Unknown cause')}" for name in active_game.dead]
         await ctx.send("💀 **Dead Characters**")
         await stream_bullets_in_message(ctx.channel, lines, base_delay=1.0)
 
@@ -556,12 +551,21 @@ class ZombieGame(commands.Cog):
         if not active_game.dead:
             await interaction.response.send_message("💀 No deaths yet.", ephemeral=True)
             return
-        lines = []
-        for name in active_game.dead:
-            reason = active_game.death_reasons.get(name, "Unknown cause")
-            lines.append(f"• {bold_name(name)}: {reason}")
+        lines = [f"• {bold_name(name)}: {active_game.death_reasons.get(name, 'Unknown cause')}" for name in active_game.dead]
         await interaction.response.send_message("💀 **Dead Characters**")
         await stream_bullets_in_message(interaction.channel, lines, base_delay=1.0)
+
+    @commands.command(name="speed")
+    async def speed_legacy(self, ctx: commands.Context, mode: str):
+        global current_speed
+        mode = mode.lower()
+        if mode not in SPEED_MULTIPLIERS:
+            await ctx.send("❌ Invalid speed. Choose: normal, fast, really fast")
+            return
+        current_speed = mode
+        if is_active():
+            active_game.speed = mode
+        await ctx.send(f"⏱️ Speed set to **{mode}**")
 
     @app_commands.command(name="speed", description="Change pacing of the game")
     @app_commands.describe(mode="Choose pacing: normal, fast, really fast")
@@ -613,6 +617,10 @@ class ZombieGame(commands.Cog):
             {"role": "system", "content": "You are a horror narrator generating a health report."},
             {"role": "user", "content": build_health_prompt()}
         ])
+        if not raw_health:
+            await channel.send("⚠️ Health report failed.")
+            return
+
         health_bullets = []
         for i, line in enumerate(enforce_bullets(bold_character_names(raw_health))):
             if ":" in line:
@@ -642,6 +650,10 @@ class ZombieGame(commands.Cog):
             {"role": "system", "content": "You are a horror narrator generating dilemmas for a survival game."},
             {"role": "user", "content": build_dilemma_prompt(raw_scene, raw_health)}
         ])
+        if not raw_dilemma:
+            await channel.send("⚠️ Dilemma generation failed.")
+            return
+
         dilemma_bullets = [format_bullet(line.strip()) for line in enforce_bullets(bold_character_names(raw_dilemma))]
         await channel.send(f"━━━━━━━━━━━━━━\n🧠 **Dilemma – Round {g.round_number}**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, dilemma_bullets, base_delay=5.0)
@@ -651,6 +663,10 @@ class ZombieGame(commands.Cog):
             {"role": "system", "content": "You are a horror narrator generating voting choices."},
             {"role": "user", "content": build_choices_prompt("\n".join(dilemma_bullets))}
         ])
+        if not raw_choices:
+            await channel.send("⚠️ Choice generation failed.")
+            return
+
         choice_lines = [line.strip() for line in raw_choices.split("\n") if line.strip()]
         g.options = [line for line in choice_lines if line.startswith(("1.", "2."))][:2]
         if len(g.options) != 2:
