@@ -288,6 +288,10 @@ def bold_name(name: str) -> str:
 def bold_character_names(text: str) -> str:
     if not isinstance(text, str):
         return ""
+
+    # Strip existing bolding to prevent double-wrapping
+    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+
     for full_name in CHARACTER_INFO:
         first_name = full_name.split()[0]
 
@@ -556,16 +560,21 @@ class ZombieGame(commands.Cog):
         await stream_bullets_in_message(interaction.channel, lines, base_delay=1.0)
 
     @commands.command(name="speed")
-    async def speed_legacy(self, ctx: commands.Context, mode: str):
+    async def speed_legacy(self, ctx: commands.Context, mode: str = "normal"):
         global current_speed
         mode = mode.lower()
         if mode not in SPEED_MULTIPLIERS:
-            await ctx.send("❌ Invalid speed. Choose: normal, fast, really fast")
+            await ctx.send("❌ Invalid speed. Choose: `normal`, `fast`, or `really fast`.")
             return
         current_speed = mode
         if is_active():
             active_game.speed = mode
         await ctx.send(f"⏱️ Speed set to **{mode}**")
+
+    @speed_legacy.error
+    async def speed_legacy_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("❌ You need to specify a speed mode: `normal`, `fast`, or `really fast`.")
 
     @app_commands.command(name="speed", description="Change pacing of the game")
     @app_commands.describe(mode="Choose pacing: normal, fast, really fast")
