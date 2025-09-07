@@ -319,22 +319,30 @@ async def stream_bullets_in_message(
     bullets: list,
     delay: float = 0.8
 ):
-    content = ""
     try:
         msg = await channel.send("...")
     except Exception as e:
         logger.warning(f"Initial message failed: {e}")
         return
 
+    content = ""
     for bullet in bullets:
-        if bullet.strip():
-            content += bullet + "\n\n"
-            try:
-                await msg.edit(content=content.strip())
-                await asyncio.sleep(delay)
-            except Exception as e:
-                logger.warning(f"Bullet stream failed: {e}")
-                break
+        cleaned = bullet.strip()
+        if not cleaned or cleaned == "•":
+            continue
+
+        # Ensure bullet ends with punctuation for clean spacing
+        if not cleaned.endswith(('.', '!', '?', '"')):
+            cleaned += "."
+
+        content += f"{cleaned}\n\n"
+        try:
+            await msg.edit(content=content.strip())
+        except Exception as e:
+            logger.warning(f"Edit failed: {e}")
+            return
+
+        await asyncio.sleep(delay)
 
 async def game_countdown_message(channel: discord.TextChannel, seconds: int, prefix: str = "", final_message: str = None):
     try:
@@ -417,7 +425,7 @@ def build_health_prompt():
         "🧠 For each character, describe their physical condition in 2–3 words. "
         "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. Stay fully in-character and in-world."
         "Format each as a bullet point using •."
-        "After the bullets, describe the ambient atmosphere in a brief sentence. Do not merge character traits with narration."
+        "After the bullets, describe the ambient atmosphere in a brief sentence. Do not merge character traits with narration. This should also be its own bullet."
         "Do not include dead characters."
         "Do not revive dead characters."
     )
