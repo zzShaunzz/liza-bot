@@ -637,15 +637,21 @@ class ZombieGame(commands.Cog):
         
         for line in scene_bullets:
             stripped = line.strip()
+        
+            # Start or continue a quote
             if stripped.startswith('"') or quote_buffer:
                 quote_buffer += (" " if quote_buffer else "") + stripped
+        
+                # If quote ends, hold it until next speaker action
                 if stripped.endswith('"') or stripped.endswith(('.', '!', '?')):
-                    if fused_bullets:
-                        fused_bullets[-1] += f" {quote_buffer}"
-                    else:
-                        fused_bullets.append(quote_buffer)
-                    quote_buffer = ""
-                continue
+                    continue
+                else:
+                    continue
+        
+            # If we have a quote waiting, fuse it into this line
+            if quote_buffer:
+                fused_bullets.append(f"{stripped} {quote_buffer}".strip())
+                quote_buffer = ""
             else:
                 fused_bullets.append(stripped)
         
