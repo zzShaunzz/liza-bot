@@ -7,8 +7,8 @@ import aiohttp
 import discord
 from dotenv import load_dotenv
 from discord.ext import commands
-from discord import app_commands
 from discord import Interaction
+from discord import app_commands
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -633,27 +633,22 @@ class ZombieGame(commands.Cog):
 
         # Fuse quote bullets with speaker actions
         fused_bullets = []
-        buffer = ""
-
+        quote_buffer = ""
+        
         for line in scene_bullets:
             stripped = line.strip()
-            if stripped.startswith('"') or buffer:
-                buffer += (" " if buffer else "") + stripped
+            if stripped.startswith('"') or quote_buffer:
+                quote_buffer += (" " if quote_buffer else "") + stripped
                 if stripped.endswith('"') or stripped.endswith(('.', '!', '?')):
                     if fused_bullets:
-                        fused_bullets[-1] += f" {buffer}"
-                    buffer = ""
-                continue
-            elif buffer:
-                buffer += " " + stripped
-                if stripped.endswith(('"', '.', '!', '?')):
-                    if fused_bullets:
-                        fused_bullets[-1] += f" {buffer}"
-                    buffer = ""
+                        fused_bullets[-1] += f" {quote_buffer}"
+                    else:
+                        fused_bullets.append(quote_buffer)
+                    quote_buffer = ""
                 continue
             else:
                 fused_bullets.append(stripped)
-
+        
         scene_bullets = fused_bullets
 
         # Stream scene bullets
