@@ -424,6 +424,12 @@ async def stream_bullets_in_message(
     """Stream bullets with proper formatting and emoji support"""
     delay = get_delay(delay_type)
     
+    # Filter out empty bullets
+    bullets = [b for b in bullets if b.strip() and b.strip() != "•"]
+    
+    if not bullets:
+        return
+    
     try:
         msg = await channel.send("...")
     except Exception as e:
@@ -434,9 +440,9 @@ async def stream_bullets_in_message(
         return
 
     content = ""
-    for bullet in bullets:
+    for i, bullet in enumerate(bullets):
         cleaned = bullet.strip()
-        if not cleaned or cleaned == "•":
+        if not cleaned:
             continue
         
         # Ensure bullet ends with punctuation for clean spacing
@@ -450,7 +456,7 @@ async def stream_bullets_in_message(
         except Exception as e:
             logger.warning(f"Edit failed during bullet stream: {cleaned} — {e}")
             # Fallback: send remaining as new message
-            remaining = [b for b in bullets[bullets.index(bullet):] if bullet in bullets else []
+            remaining = bullets[i:]  # Safer than using index()
             if remaining:
                 await channel.send("\n".join(remaining))
             return
