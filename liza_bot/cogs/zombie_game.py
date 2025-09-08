@@ -14,7 +14,7 @@ from discord import Interaction, app_commands
 from collections import defaultdict
 
 # --- Constants ---
-VERSION = "2.2.0"  # Updated version
+VERSION = "2.3.0"  # Updated version
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("zombie_game")
 load_dotenv()
@@ -346,7 +346,7 @@ def bold_character_names(text: str) -> str:
 
     # Handle possessives first
     for name in all_names:
-        text = re.sub(rf'\b({re.escape(name)})[\'’]s\b', rf"**\1**'\2s", text)
+        text = re.sub(rf'\b({re.escape(name)})[\'’]s\b', rf"**\1**'s", text)
 
     # Then bold full names
     for name in all_names:
@@ -489,27 +489,67 @@ class ZombieGame(commands.Cog):
 
         async def player_callback(interaction):
             await interaction.response.edit_message(content="🔄 Starting player game...", view=None)
-            await start_game_async(interaction.user.id, "player")
-            msg = await interaction.channel.send("🧟‍♀️ Zombie survival game starting in...")
-            await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
-            await msg.edit(content="🧟‍♀️ Game loading...")
-            logger.info("✅ Countdown finished. Starting run_round...")
-            await self.run_round(interaction.channel)
+            await self.ask_game_speed(interaction, "player")
 
         async def auto_callback(interaction):
             await interaction.response.edit_message(content="🔄 Starting auto game...", view=None)
-            await start_game_async(interaction.user.id, "auto")
-            msg = await interaction.channel.send("🤖 Auto zombie game starting in...")
-            await countdown_message(msg, 3, "🤖 Auto zombie game starting in...")
-            await msg.edit(content="🤖 Auto game loading...")
-            logger.info("✅ Countdown finished. Starting run_round...")
-            await self.run_round(interaction.channel)
+            await self.ask_game_speed(interaction, "auto")
 
         player_btn.callback = player_callback
         auto_btn.callback = auto_callback
         view.add_item(player_btn)
         view.add_item(auto_btn)
         await interaction.followup.send("🎮 Choose a game mode:", view=view)
+
+    async def ask_game_speed(self, interaction: Interaction, game_mode: str):
+        view = discord.ui.View()
+        speed_1x = discord.ui.Button(label="1.0x (Normal)", style=discord.ButtonStyle.secondary)
+        speed_15x = discord.ui.Button(label="1.5x (Fast)", style=discord.ButtonStyle.secondary)
+        speed_2x = discord.ui.Button(label="2.0x (Very Fast)", style=discord.ButtonStyle.secondary)
+
+        async def speed_1x_callback(interaction):
+            global current_speed
+            current_speed = 1.0
+            await interaction.response.edit_message(content="⚡ Game speed set to 1.0x (Normal). Starting game...", view=None)
+            await start_game_async(interaction.user.id, game_mode, speed=1.0)
+            msg = await interaction.channel.send("🧟‍♀️ Game starting in...")
+            await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
+            await msg.edit(content="🎮 Game loading...")
+            await self.run_round(interaction.channel)
+
+        async def speed_15x_callback(interaction):
+            global current_speed
+            current_speed = 1.5
+            await interaction.response.edit_message(content="⚡ Game speed set to 1.5x (Fast). Starting game...", view=None)
+            await start_game_async(interaction.user.id, game_mode, speed=1.5)
+            msg = await interaction.channel.send("🧟‍♀️ Game starting in...")
+            await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
+            await msg.edit(content="🎮 Game loading...")
+            await self.run_round(interaction.channel)
+
+        async def speed_2x_callback(interaction):
+            global current_speed
+            current_speed = 2.0
+            await interaction.response.edit_message(content="⚡ Game speed set to 2.0x (Very Fast). Starting game...", view=None)
+            await start_game_async(interaction.user.id, game_mode, speed=2.0)
+            msg = await interaction.channel.send("🧟‍♀️ Game starting in...")
+            await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
+            await msg.edit(content="🎮 Game loading...")
+            await self.run_round(interaction.channel)
+
+        speed_1x.callback = speed_1x_callback
+        speed_15x.callback = speed_15x_callback
+        speed_2x.callback = speed_2x_callback
+        view.add_item(speed_1x)
+        view.add_item(speed_15x)
+        view.add_item(speed_2x)
+        await interaction.followup.send(
+            "🏃 **Choose your game speed** (you can change this later with `/speed`):\n"
+            "- **1.0x (Normal)**: Balanced pacing, ideal for new players.\n"
+            "- **1.5x (Fast)**: Faster rounds, less waiting.\n"
+            "- **2.0x (Very Fast)**: Quick decisions, intense gameplay.\n",
+            view=view
+        )
 
     @app_commands.command(name="endzombie", description="Manually end the zombie game")
     async def end_zombie_slash(self, interaction: Interaction):
@@ -523,7 +563,7 @@ class ZombieGame(commands.Cog):
         end_game()
 
     @app_commands.command(name="speed", description="Adjust game speed")
-    @app_commands.describe(speed="Game speed multiplier")
+    @app_commands.describe(speed="Game speed multiplier (1.0, 1.5, or 2.0)")
     async def speed_slash(self, interaction: Interaction, speed: float):
         global current_speed
         if not is_active():
@@ -1032,7 +1072,7 @@ def get_leaderboard_stats():
         logger.error(f"Error getting leaderboard stats: {e}")
         return None
 
-async def start_game_async(user_id: int, game_mode: str = "player", resume=False):
+async def start_game_async(user_id: int, game_mode: str = "player", resume=False, speed: float = 1.0):
     global active_game, current_speed
     if resume:
         active_game = GameState.load(user_id)
@@ -1041,7 +1081,8 @@ async def start_game_async(user_id: int, game_mode: str = "player", resume=False
             return True
         return False
     active_game = GameState(user_id, game_mode)
-    current_speed = active_game.game_speed
+    current_speed = speed
+    active_game.game_speed = speed
     active_game.story_seed = await generate_unique_setting()
     active_game.story_context = f"Setting: {active_game.story_seed}\n"
     return True
