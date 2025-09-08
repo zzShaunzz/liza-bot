@@ -174,7 +174,7 @@ CHARACTER_INFO = {
     },
     "Gabe Muy": {
         "age": 17, "gender": "Male",
-        "traits": ["wrestler", "peacekeeper", "withdraws under pressure", "light-weight"],
+        "traits": ["wrestler", "peacekeeper", "humorous", "light-weight"],
         "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
         "likely_conflicts": ["Addison Sadsarin"],
@@ -1042,8 +1042,39 @@ class ZombieGame(commands.Cog):
         countdown_msg = await channel.send(f"⏳ Voting ends in {countdown_duration} seconds...")
         start_time = datetime.utcnow()
         last_vote_time = start_time
-        votes_cast = set()
+        votes_cast = set()  # Initialize the set once
         early_termination = False
+        
+        # Check for votes every second, with early termination
+        for i in range(countdown_duration, 0, -1):
+            if active_game and active_game.terminated:
+                return
+                
+            # Refresh message to get current reactions
+            try:
+                choices_msg = await channel.fetch_message(choices_msg.id)
+                votes = await tally_votes(choices_msg, votes_cast)  # Pass the same set each time
+                
+                # Check if we have votes and if it's been 5 seconds since last vote
+                current_time = datetime.utcnow()
+                if (votes["1️⃣"] > 0 or votes["2️⃣"] > 0) and (current_time - last_vote_time).total_seconds() >= 5:
+                    early_termination = True
+                    break
+                    
+                # Update last vote time if we got new votes
+                if votes["1️⃣"] + votes["2️⃣"] > 0:
+                    last_vote_time = current_time
+                    
+            except Exception as e:
+                logger.warning(f"Error fetching votes: {e}")
+                
+            # Update countdown
+            try:
+                await countdown_msg.edit(content=f"⏳ Voting ends in {i} seconds...")
+            except Exception as e:
+                logger.warning(f"Error updating countdown: {e}")
+                
+            await asyncio.sleep(1)
         
         # Check for votes every second, with early termination
         for i in range(countdown_duration, 0, -1):
