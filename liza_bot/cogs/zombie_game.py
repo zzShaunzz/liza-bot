@@ -3,7 +3,6 @@ import re
 import httpx
 import asyncio
 import logging
-import aiohttp
 import discord
 import random
 import json
@@ -15,7 +14,7 @@ from discord import Interaction, app_commands
 from collections import defaultdict
 
 # --- Constants ---
-VERSION = "2.1.0"  # Version tracking
+VERSION = "2.2.0"  # Updated version
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("zombie_game")
 load_dotenv()
@@ -199,7 +198,7 @@ class GameState:
         game = cls(data["initiator"], data.get("game_mode", "player"))
         game.round = data["round"]
         game.alive = data["alive"]
-        game.dead = list(dict.fromkeys(data["dead"]))  # Remove duplicates
+        game.dead = list(dict.fromkeys(data["dead"]))
         game.last_choice = data["last_choice"]
         game.last_events = data["last_events"]
         game.options = data["options"]
@@ -339,23 +338,20 @@ def bold_name(name: str) -> str:
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
-    all_names = sorted(CHARACTER_INFO.keys(), key=len, reverse=True)
-    temp_mappings = {}
+    all_names = []
+    for name in CHARACTER_INFO.keys():
+        all_names.append(name)  # Full name
+        all_names.append(name.split()[0])  # First name
+    all_names = sorted(set(all_names), key=len, reverse=True)
+
+    # Handle possessives first
     for name in all_names:
-        straight_temp = f"TEMP_POSS_STRAIGHT_{hash(name)}"
-        curly_temp = f"TEMP_POSS_CURLY_{hash(name)}"
-        text = text.replace(f"{name}'s", straight_temp)
-        text = text.replace(f"{name}’s", curly_temp)
-        temp_mappings[straight_temp] = f"**{name}'s**"
-        temp_mappings[curly_temp] = f"**{name}’s**"
+        text = re.sub(rf'\b({re.escape(name)})[\'’]s\b', rf"**\1**'\2s", text)
+
+    # Then bold full names
     for name in all_names:
         text = re.sub(rf'\b{re.escape(name)}\b', f"**{name}**", text)
-    for name in all_names:
-        first_name = name.split()[0]
-        if f"**{first_name} " not in text:
-            text = re.sub(rf'\b{re.escape(first_name)}\b', f"**{first_name}**", text)
-    for temp, replacement in temp_mappings.items():
-        text = text.replace(temp, replacement)
+
     return text
 
 def format_bullet(text: str) -> str:
@@ -368,9 +364,6 @@ def capitalize_first_letter(text: str) -> str:
     if not text:
         return text
     return text[0].upper() + text[1:] if len(text) > 1 else text.upper()
-
-def split_into_sentences(text: str) -> list:
-    return re.split(r'(?<=[.!?])\s+', text.strip())
 
 def enforce_bullets(text: str) -> list:
     lines = text.splitlines()
@@ -420,21 +413,30 @@ def build_scene_prompt():
         "Avoid repeating scenes or plotlines from previous sessions. "
         "Never revive characters who have died. "
         "Don't treat dead characters as alive. "
-        "Do not list multiple options. Do not use numbered choices. Only continue the story."
+        "Do not list multiple options. Do not use numbered choices. Only continue the story. "
+        "Use dialogue sparingly and format it as: • > Character: \"Dialogue\""
     )
 
 def build_health_prompt():
     g = active_game
+    alive_characters = ', '.join([f"{name.split()[0]} ({name})" for name in g.alive])
     return (
         f"{g.story_context}\n"
-        f"🧍 Alive: {', '.join(g.alive)}\n\n"
-        "🧠 For each character, describe their physical condition in 2–3 words. "
-        "CAPITALIZE the first letter of each description (e.g., 'Alert, tense' not 'alert, tense'). "
-        "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. "
+        f"🧍 Alive: {alive_characters}\n\n"
+        "🧠 For each character listed above, describe their **physical condition** in 2–3 words. "
+        "Use their **FIRST NAME** in your response (e.g., 'Shaun: Alert, focused'). "
+        "CAPITALIZE the first letter of each description. "
         "Format each as a bullet point using •. "
-        "After the bullets, describe the ambient atmosphere in a brief sentence. "
-        "Do not include dead characters. "
-        "Do not revive dead characters."
+        "**Include every alive character.** "
+        "Do not use 'Status unknown' or generic descriptions."
+    )
+
+def build_scene_summary_prompt(scene_text):
+    return (
+        f"{active_game.story_context}\n"
+        f"Scene:\n{scene_text}\n\n"
+        "🧠 Summarize the key events in **one vivid sentence**. "
+        "Focus on the most critical developments."
     )
 
 # --- Game Commands ---
@@ -575,7 +577,14 @@ class ZombieGame(commands.Cog):
             await channel.send("⚠️ Scene generation failed.")
             return
         scene_bullets = enforce_bullets(raw_scene)
-        await channel.send(f"━━━━━━━━━━━━━━\n🎭 **Scene {g.round_number}**\n━━━━━━━━━━━━━━")
+
+        # Generate scene summary
+        raw_summary = await generate_scene_summary("\n".join(scene_bullets), g)
+        if raw_summary:
+            scene_bullets.append(f"\n📌 **Scene Summary**: {bold_character_names(raw_summary)}")
+
+        await channel.send(f"=== ROUND {g.round_number} ===")
+        await channel.send("🎭 **Scene**")
         await stream_bullets_in_message(channel, scene_bullets, "scene")
         g.story_context += "\n".join(scene_bullets) + "\n"
         g.story_context = "\n".join(g.story_context.strip().splitlines()[-12:])
@@ -587,18 +596,29 @@ class ZombieGame(commands.Cog):
             return
         health_lines = []
         processed_characters = set()
+
         for line in raw_health.split('\n'):
             if not line.strip() or not line.strip().startswith('•'):
                 continue
             line = line.strip().lstrip('•').strip()
+
             matched_character = None
             for name in g.alive:
-                if re.search(rf'\b{re.escape(name)}\b', line, re.IGNORECASE) and name not in processed_characters:
+                full_name = name
+                first_name = name.split()[0]
+                if (re.search(rf'\b{re.escape(full_name)}\b', line, re.IGNORECASE) or
+                    re.search(rf'\b{re.escape(first_name)}\b', line, re.IGNORECASE)):
                     matched_character = name
                     processed_characters.add(name)
                     break
+
             if matched_character:
-                health_status = line.replace(matched_character, '').strip().lstrip(':').strip()
+                health_status = line
+                for name in g.alive:
+                    full_name = name
+                    first_name = name.split()[0]
+                    health_status = health_status.replace(full_name, '').replace(first_name, '').strip().lstrip(':').strip()
+
                 if health_status:
                     words = health_status.split()
                     if words:
@@ -606,11 +626,15 @@ class ZombieGame(commands.Cog):
                         for i in range(1, len(words)):
                             words[i] = words[i].lower()
                         health_status = ' '.join(words)
+                else:
+                    health_status = random.choice(["Stable, cautious", "Alert, focused", "Tired, but holding on"])
+
                 icon = "🟢"
-                if any(word in health_status.lower() for word in ['hurt', 'wounded', 'injured', 'weak', 'tired', 'exhausted']):
+                if any(word in health_status.lower() for word in ['hurt', 'wounded', 'injured', 'weak', 'tired', 'exhausted', 'panicked']):
                     icon = "🟡"
-                elif any(word in health_status.lower() for word in ['critical', 'dying', 'bleeding', 'unconscious', 'fever']):
+                elif any(word in health_status.lower() for word in ['critical', 'dying', 'bleeding', 'unconscious', 'fever', 'submerged', 'unseen']):
                     icon = "🔴"
+
                 emoji_name = CHARACTER_INFO[matched_character]["emoji"]
                 emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
                 if emoji:
@@ -618,15 +642,19 @@ class ZombieGame(commands.Cog):
                 else:
                     formatted_line = f"{icon} {bold_name(matched_character)} :{emoji_name}: : {health_status}"
                 health_lines.append(formatted_line)
+
+        # Add missing characters with default statuses
         for name in g.alive:
             if name not in processed_characters:
                 emoji_name = CHARACTER_INFO[name]["emoji"]
                 emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+                default_status = random.choice(["Stable, cautious", "Alert, focused", "Tired, but holding on"])
                 if emoji:
-                    health_lines.append(f"🟢 {bold_name(name)} {emoji} - Status unknown")
+                    health_lines.append(f"🟢 {bold_name(name)} {emoji} : {default_status}")
                 else:
-                    health_lines.append(f"🟢 {bold_name(name)} :{emoji_name}: - Status unknown")
-        await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**\n━━━━━━━━━━━━━━")
+                    health_lines.append(f"🟢 {bold_name(name)} :{emoji_name}: : {default_status}")
+
+        await channel.send("🩺 **Health Status**")
         await stream_bullets_in_message(channel, health_lines, "health")
 
         # --- Phase 3: Dilemma ---
@@ -635,7 +663,7 @@ class ZombieGame(commands.Cog):
             await channel.send("⚠️ Dilemma generation failed.")
             return
         dilemma_bullets = enforce_bullets(raw_dilemma)
-        await channel.send(f"━━━━━━━━━━━━━━\n🧠 **Dilemma – Round {g.round_number}**\n━━━━━━━━━━━━━━")
+        await channel.send("🧠 **Dilemma**")
         await stream_bullets_in_message(channel, dilemma_bullets, "dilemma")
 
         # --- Phase 4: Choices ---
@@ -651,7 +679,7 @@ class ZombieGame(commands.Cog):
             end_game()
             return
         formatted_options = [bold_character_names(option) for option in g.options]
-        await channel.send("━━━━━━━━━━━━━━\n🔀 **Choices**\n━━━━━━━━━━━━━━")
+        await channel.send("🔀 **Choices**")
         await stream_bullets_in_message(channel, formatted_options, "choices")
 
         # --- Phase 5: Voting ---
@@ -660,7 +688,7 @@ class ZombieGame(commands.Cog):
             g.last_choice = random.choice(g.options)
             await channel.send(f"🤖 **Auto-selected**: {g.last_choice}")
         else:
-            choices_msg = await channel.send("━━━━━━━━━━━━━━\n🗳️ React to vote!")
+            choices_msg = await channel.send("🗳️ React to vote!")
             await choices_msg.add_reaction("1️⃣")
             await choices_msg.add_reaction("2️⃣")
             countdown_duration = int(20 / current_speed)
@@ -720,10 +748,8 @@ class ZombieGame(commands.Cog):
             await channel.send("⚠️ Outcome generation failed.")
             end_game()
             return
-        outcome_text = raw_outcome
-        await channel.send(f"━━━━━━━━━━━━━━━━━━━━━━━\n     🩸 End of Round {g.round} 🩸\n━━━━━━━━━━━━━━━━━━━━━━━━")
-        outcome_bullets = enforce_bullets(outcome_text)
-        await channel.send("━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━")
+        outcome_bullets = enforce_bullets(raw_outcome)
+        await channel.send(f"🩸 **End of Round {g.round}** 🩸")
         await stream_bullets_in_message(channel, outcome_bullets, "summary")
 
         # --- Phase 7: Death Detection ---
@@ -764,6 +790,7 @@ class ZombieGame(commands.Cog):
             g.dead.append(victim)
             new_deaths.append(victim)
             logger.info(f"☠️ {victim} forcibly killed to ensure death per round.")
+            outcome_bullets.append(f"• {bold_name(victim)} is overwhelmed and **dies**.")
 
         # --- Phase 8: Survivors ---
         formatted_survivors = []
@@ -782,9 +809,9 @@ class ZombieGame(commands.Cog):
                 formatted_deaths.append(f"• {bold_name(name)} {emoji}")
             else:
                 formatted_deaths.append(f"• {bold_name(name)} :{emoji_name}:")
-        await channel.send("━━━━━━━━━━━━━━\n💀 **Deaths This Round**\n━━━━━━━━━━━━━━")
+        await channel.send("💀 **Deaths This Round**")
         await stream_bullets_in_message(channel, formatted_deaths, "stats")
-        await channel.send("━━━━━━━━━━━━━━\n🧍 **Remaining Survivors**\n━━━━━━━━━━━━━━")
+        await channel.send("🧍 **Remaining Survivors**")
         await stream_bullets_in_message(channel, formatted_survivors, "stats")
 
         # --- Phase 9: Game End Check ---
@@ -811,7 +838,7 @@ class ZombieGame(commands.Cog):
         g = active_game
         if not g or g.terminated:
             return
-        await channel.send("━━━━━━━━━━━━━━\n📜 **Game Summary**\n━━━━━━━━━━━━━━")
+        await channel.send("📜 **Game Summary**")
         valid_deaths = [name for name in g.dead if name and name.lower() != "none"]
         deaths_block = []
         for name in valid_deaths:
@@ -825,6 +852,7 @@ class ZombieGame(commands.Cog):
             deaths_block = ["• None"]
         await channel.send("🪦 **Deaths (most recent first)**")
         await stream_bullets_in_message(channel, deaths_block, "stats")
+
         most_helpful = max(g.stats.get("helped", {}).items(), key=lambda x: x[1])[0] if g.stats.get("helped") else "None"
         most_sinister = max(g.stats.get("sinister", {}).items(), key=lambda x: x[1])[0] if g.stats.get("sinister") else "None"
         most_resourceful = max(g.stats.get("resourceful", {}).items(), key=lambda x: x[1])[0] if g.stats.get("resourceful") else "None"
@@ -834,21 +862,22 @@ class ZombieGame(commands.Cog):
         bond_pair = bonds[0][0] if bonds else ("None", "None")
         conflict_pair = conflicts[0][0] if conflicts else ("None", "None")
         final_stats = [
-            f"🏅 Most helpful:\n• {bold_name(most_helpful)}",
-            f"😈 Most sinister:\n• {bold_name(most_sinister)}",
-            f"🔧 Most resourceful:\n• {bold_name(most_resourceful)}",
-            f"🤝 Greatest bond:\n• {bold_name(bond_pair[0])} & {bold_name(bond_pair[1])}",
-            f"⚔️ Biggest conflict:\n• {bold_name(conflict_pair[0])} vs {bold_name(conflict_pair[1])}",
-            f"🕊️ Most dignified:\n• {bold_name(most_dignified)}"
+            f"🏅 Most helpful: {bold_name(most_helpful)}",
+            f"😈 Most sinister: {bold_name(most_sinister)}",
+            f"🔧 Most resourceful: {bold_name(most_resourceful)}",
+            f"🤝 Greatest bond: {bold_name(bond_pair[0])} & {bold_name(bond_pair[1])}",
+            f"⚔️ Biggest conflict: {bold_name(conflict_pair[0])} vs {bold_name(conflict_pair[1])}",
+            f"🕊️ Most dignified: {bold_name(most_dignified)}"
         ]
         final_stats = [line for line in final_stats if "None" not in line]
-        await channel.send("━━━━━━━━━━━━━━\n📊 **Final Stats**\n━━━━━━━━━━━━━━")
+        await channel.send("📊 **Final Stats**")
         await stream_bullets_in_message(channel, final_stats, "stats")
+
         if g.story_context and g.last_choice:
             raw_recap = await generate_full_recap(g)
             if raw_recap:
                 recap_bullets = enforce_bullets(raw_recap)
-                await channel.send("━━━━━━━━━━━━━━\n🧠 **Game Recap**\n━━━━━━━━━━━━━━")
+                await channel.send("🧠 **Game Recap**")
                 await stream_bullets_in_message(channel, recap_bullets, "summary")
             else:
                 await channel.send("📝 *No AI recap generated*")
@@ -865,6 +894,13 @@ async def generate_scene(g):
     auto_track_deaths(raw_scene, g)
     auto_track_relationships(raw_scene, g)
     return raw_scene
+
+async def generate_scene_summary(scene_text, g):
+    raw_summary = await generate_ai_text([
+        {"role": "system", "content": "You are a horror narrator summarizing a zombie survival scene."},
+        {"role": "user", "content": build_scene_summary_prompt(scene_text)}
+    ], temperature=0.7)
+    return raw_summary
 
 async def generate_health_report(g):
     raw_health = await generate_ai_text([
