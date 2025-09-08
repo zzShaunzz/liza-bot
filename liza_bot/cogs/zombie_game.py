@@ -337,26 +337,17 @@ def bold_name(name: str) -> str:
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
+    # First handle possessive forms
     for name in CHARACTER_INFO:
-        # Handle possessives first
-        text = re.sub(
-            rf"(?<!\*)\b({re.escape(name)})'s\b(?!\*)",
-            r"**\1**'s",
-            text
-        )
-        # Handle full names
-        text = re.sub(
-            rf"(?<!\*)\b({re.escape(name)})\b(?!\*)",
-            r"**\1**",
-            text
-        )
-        # Handle first names
-        first_name = name.split()[0]
-        text = re.sub(
-            rf"(?<!\*)\b({re.escape(first_name)})\b(?!\*)",
-            r"**\1**",
-            text
-        )
+        possessive_pattern = rf"\b({re.escape(name)})'s\b"
+        text = re.sub(possessive_pattern, r"**\1**'s", text)
+    
+    # Then handle regular names (full names first to avoid partial matches)
+    sorted_names = sorted(CHARACTER_INFO.keys(), key=len, reverse=True)
+    for name in sorted_names:
+        name_pattern = rf"\b({re.escape(name)})\b"
+        text = re.sub(name_pattern, r"**\1**", text)
+    
     return text
 
 def format_bullet(text: str) -> str:
@@ -811,6 +802,10 @@ class ZombieGame(commands.Cog):
         await interaction.response.send_message(f"⚡ Game speed set to {speed}x")
 
     async def run_round(self, channel: discord.TextChannel):
+        if not active_game or active_game.terminated:
+            await channel.send("🛑 Game has been terminated.")
+            return
+            
         g = active_game
         g.round += 1
         
@@ -915,41 +910,59 @@ class ZombieGame(commands.Cog):
             await channel.send("⚠️ Health report failed.")
             return
 
-        # Process health report with custom emojis
+        # Process health report with custom emojis for ALL characters
         health_lines = []
+        processed_characters = set()
+
         for line in raw_health.split('\n'):
             if not line.strip() or not line.strip().startswith('•'):
                 continue
                 
             line = line.strip().lstrip('•').strip()
-            for name, info in CHARACTER_INFO.items():
-                if name in line and name in g.alive:
-                    # Add custom emoji and health indicator
-                    health_status = line.replace(name, '').strip().lstrip(':').strip()
-                    
-                    # Determine health tier icon
-                    if any(word in health_status.lower() for word in ['healthy', 'good', 'strong', 'fine', 'well']):
-                        icon = "🟢"
-                    elif any(word in health_status.lower() for word in ['hurt', 'wounded', 'injured', 'weak', 'tired', 'exhausted']):
-                        icon = "🟡"
-                    elif any(word in health_status.lower() for word in ['critical', 'dying', 'bleeding', 'unconscious', 'fever']):
-                        icon = "🔴"
-                    else:
-                        icon = "🟢"  # Default to green
-                    
-                    # Format with proper spacing for emojis
-                    emoji_name = info["emoji"]
-                    # Try to get the actual emoji object from the server
-                    emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
-                    if emoji:
-                        formatted_line = f"{icon} {bold_name(name)} {emoji} - {health_status}"
-                    else:
-                        formatted_line = f"{icon} {bold_name(name)} :{emoji_name}: - {health_status}"
-                    health_lines.append(formatted_line)
+            
+            # Try to find which character this line refers to
+            matched_character = None
+            for name in g.alive:
+                if name in line and name not in processed_characters:
+                    matched_character = name
+                    processed_characters.add(name)
                     break
+            
+            if matched_character:
+                # Extract health status (everything after the character name)
+                health_status = line.replace(matched_character, '').strip().lstrip(':').strip()
+                
+                # Determine health tier icon
+                if any(word in health_status.lower() for word in ['healthy', 'good', 'strong', 'fine', 'well']):
+                    icon = "🟢"
+                elif any(word in health_status.lower() for word in ['hurt', 'wounded', 'injured', 'weak', 'tired', 'exhausted']):
+                    icon = "🟡"
+                elif any(word in health_status.lower() for word in ['critical', 'dying', 'bleeding', 'unconscious', 'fever']):
+                    icon = "🔴"
+                else:
+                    icon = "🟢"  # Default to green
+                
+                # Format with proper spacing for emojis
+                emoji_name = CHARACTER_INFO[matched_character]["emoji"]
+                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+                if emoji:
+                    formatted_line = f"{icon} {bold_name(matched_character)} {emoji} - {health_status}"
+                else:
+                    formatted_line = f"{icon} {bold_name(matched_character)} :{emoji_name}: - {health_status}"
+                health_lines.append(formatted_line)
             else:
                 # Line doesn't contain a character name, add as-is
                 health_lines.append(f"• {line}")
+
+        # Add any missing characters
+        for name in g.alive:
+            if name not in processed_characters:
+                emoji_name = CHARACTER_INFO[name]["emoji"]
+                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+                if emoji:
+                    health_lines.append(f"🟢 {bold_name(name)} {emoji} - Status unknown")
+                else:
+                    health_lines.append(f"🟢 {bold_name(name)} :{emoji_name}: - Status unknown")
 
         await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, health_lines, "health")
@@ -960,11 +973,21 @@ class ZombieGame(commands.Cog):
             raw_bolded_dynamics = bold_character_names(raw_dynamics)
             enforced_dynamics = enforce_bullets(raw_bolded_dynamics)
 
-            dynamics_bullets = [
-                format_bullet(line.lstrip("•").strip())
-                for line in enforced_dynamics
-                if line.strip() and line.strip() != "•"
-            ]
+            # Add emojis to character dynamics
+            dynamics_bullets = []
+            for line in enforced_dynamics:
+                if line.strip() and line.strip() != "•":
+                    formatted_line = line
+                    # Add emojis to character names in dynamics
+                    for name, info in CHARACTER_INFO.items():
+                        if name in line and name in g.alive:
+                            emoji_name = info["emoji"]
+                            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+                            if emoji:
+                                formatted_line = formatted_line.replace(bold_name(name), f"{bold_name(name)} {emoji}")
+                            else:
+                                formatted_line = formatted_line.replace(bold_name(name), f"{bold_name(name)} :{emoji_name}:")
+                    dynamics_bullets.append(formatted_line)
 
             await channel.send("━━━━━━━━━━━━━━\n💬 **Group Dynamics**\n━━━━━━━━━━━━━━")
             await stream_bullets_in_message(channel, dynamics_bullets, "dynamics")
@@ -1012,13 +1035,14 @@ class ZombieGame(commands.Cog):
         await choices_msg.add_reaction("1️⃣")
         await choices_msg.add_reaction("2️⃣")
         
-        # Voting with early termination
-        countdown_msg = await channel.send("⏳ Voting ends in 20 seconds...")
+        # Voting with early termination - affected by speed modifier
+        countdown_duration = int(20 / current_speed)  # Adjust countdown based on speed
+        countdown_msg = await channel.send(f"⏳ Voting ends in {countdown_duration} seconds...")
         start_time = datetime.utcnow()
         last_vote_time = start_time
         
         # Check for votes every second, with early termination
-        for i in range(20, 0, -1):
+        for i in range(countdown_duration, 0, -1):
             if active_game and active_game.terminated:
                 return
                 
@@ -1182,8 +1206,19 @@ class ZombieGame(commands.Cog):
         narration_only = raw_scene
         g.story_context += narration_only + "\n"
 
+        # Format deaths with emojis like survivors
+        formatted_deaths = []
+        for name in new_deaths:
+            emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
+            # Try to get the actual emoji object from the server
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+            if emoji:
+                formatted_deaths.append(f"• {bold_name(name)} {emoji}")
+            else:
+                formatted_deaths.append(f"• {bold_name(name)} :{emoji_name}:")
+
         await channel.send("━━━━━━━━━━━━━━\n💀 **Deaths This Round**\n━━━━━━━━━━━━━━")
-        await stream_bullets_in_message(channel, [f"• {bold_name(name)}" for name in new_deaths], "stats")
+        await stream_bullets_in_message(channel, formatted_deaths, "stats")
         
         await channel.send("━━━━━━━━━━━━━━\n🧍 **Remaining Survivors**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, formatted_survivors, "stats")
@@ -1210,7 +1245,15 @@ class ZombieGame(commands.Cog):
         await channel.send("━━━━━━━━━━━━━━\n📜 **Game Summary**\n━━━━━━━━━━━━━━")
     
         valid_deaths = [name for name in g.dead if name and name.lower() != "none"]
-        deaths_block = [f"• {bold_name(name)}" for name in valid_deaths]
+        # Format deaths with emojis
+        deaths_block = []
+        for name in valid_deaths:
+            emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+            if emoji:
+                deaths_block.append(f"• {bold_name(name)} {emoji}")
+            else:
+                deaths_block.append(f"• {bold_name(name)} :{emoji_name}:")
     
         if not deaths_block:
             deaths_block = ["• None"]
