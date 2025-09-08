@@ -217,7 +217,7 @@ CHARACTERS = list(CHARACTER_INFO.keys())
 
 # Game State
 class GameState:
-    def __init__(self, initiator: int):
+    def __init__(self, initiator: int, game_mode: str = "player"):
         self.initiator = initiator
         self.round = 0
         self.alive = CHARACTERS.copy()
@@ -239,6 +239,7 @@ class GameState:
         self.terminated = False
         self.round_number = 1
         self.game_speed = 1.0
+        self.game_mode = game_mode  # "player" or "auto"
         self.save_file = f"zombie_game_{initiator}.json"
 
     def save(self):
@@ -256,7 +257,8 @@ class GameState:
             "story_seed": self.story_seed,
             "story_context": self.story_context,
             "round_number": self.round_number,
-            "game_speed": self.game_speed
+            "game_speed": self.game_speed,
+            "game_mode": self.game_mode
         }
         with open(self.save_file, 'w') as f:
             json.dump(data, f, indent=2)
@@ -271,7 +273,7 @@ class GameState:
         with open(save_file, 'r') as f:
             data = json.load(f)
         
-        game = cls(data["initiator"])
+        game = cls(data["initiator"], data.get("game_mode", "player"))
         game.round = data["round"]
         game.alive = data["alive"]
         game.dead = data["dead"]
@@ -314,7 +316,7 @@ async def generate_unique_setting():
     ]
     return await generate_ai_text(messages)
 
-async def start_game_async(user_id: int, resume=False):
+async def start_game_async(user_id: int, game_mode: str = "player", resume=False):
     global active_game, current_speed
     
     if resume:
@@ -326,7 +328,7 @@ async def start_game_async(user_id: int, resume=False):
         return False
     
     # Start new game
-    active_game = GameState(user_id)
+    active_game = GameState(user_id, game_mode)
     current_speed = active_game.game_speed
     active_game.story_seed = await generate_unique_setting()
     active_game.story_context = f"Setting: {active_game.story_seed}\n"
@@ -686,8 +688,7 @@ class ZombieGame(commands.Cog):
                 
             async def new_callback(interaction):
                 await interaction.response.edit_message(content="🔄 Starting new game...", view=None)
-                await start_game_async(ctx.author.id)
-                await self.run_round(ctx.channel)
+                await self.ask_game_mode(ctx)
                 
             continue_btn.callback = continue_callback
             new_btn.callback = new_callback
@@ -697,20 +698,52 @@ class ZombieGame(commands.Cog):
             await ctx.send("Found a previous game... Continue or Start new?", view=view)
             return
 
-        await start_game_async(ctx.author.id)
+        await self.ask_game_mode(ctx)
 
-        msg = await ctx.send("🧟‍♀️ Game is starting")
-        stop_event = asyncio.Event()
-        animation_task = asyncio.create_task(animate_game_start(msg, stop_event))
+    async def ask_game_mode(self, ctx):
+        """Ask the user to choose a game mode"""
+        view = discord.ui.View()
+        player_btn = discord.ui.Button(label="Player Game", style=discord.ButtonStyle.blurple, emoji="👤")
+        auto_btn = discord.ui.Button(label="Auto Game", style=discord.ButtonStyle.green, emoji="🤖")
+        
+        async def player_callback(interaction):
+            await interaction.response.edit_message(content="🔄 Starting player game...", view=None)
+            await start_game_async(ctx.author.id, "player")
+            msg = await ctx.send("🧟‍♀️ Game is starting")
+            stop_event = asyncio.Event()
+            animation_task = asyncio.create_task(animate_game_start(msg, stop_event))
 
-        try:
-            await self.run_round(ctx.channel)
-        except Exception as e:
-            logger.error(f"run_round crashed: {e}")
-            await ctx.send("⚠️ Game failed to start.")
-        finally:
-            stop_event.set()
-            await animation_task
+            try:
+                await self.run_round(ctx.channel)
+            except Exception as e:
+                logger.error(f"run_round crashed: {e}")
+                await ctx.send("⚠️ Game failed to start.")
+            finally:
+                stop_event.set()
+                await animation_task
+                
+        async def auto_callback(interaction):
+            await interaction.response.edit_message(content="🔄 Starting auto game...", view=None)
+            await start_game_async(ctx.author.id, "auto")
+            msg = await ctx.send("🤖 Auto game is starting")
+            stop_event = asyncio.Event()
+            animation_task = asyncio.create_task(animate_game_start(msg, stop_event, "🤖 Auto game is starting"))
+
+            try:
+                await self.run_round(ctx.channel)
+            except Exception as e:
+                logger.error(f"run_round crashed: {e}")
+                await ctx.send("⚠️ Game failed to start.")
+            finally:
+                stop_event.set()
+                await animation_task
+                
+        player_btn.callback = player_callback
+        auto_btn.callback = auto_callback
+        view.add_item(player_btn)
+        view.add_item(auto_btn)
+        
+        await ctx.send("🎮 Choose a game mode:", view=view)
 
     @app_commands.command(name="lizazombie", description="Start a zombie survival game")
     async def lizazombie_slash(self, interaction: Interaction):
@@ -740,8 +773,7 @@ class ZombieGame(commands.Cog):
                 
             async def new_callback(interaction):
                 await interaction.response.edit_message(content="🔄 Starting new game...", view=None)
-                await start_game_async(interaction.user.id)
-                await self.run_round(interaction.channel)
+                await self.ask_game_mode_slash(interaction)
                 
             continue_btn.callback = continue_callback
             new_btn.callback = new_callback
@@ -751,14 +783,40 @@ class ZombieGame(commands.Cog):
             await interaction.followup.send("Found a previous game... Continue or Start new?", view=view)
             return
 
-        await start_game_async(interaction.user.id)
+        await self.ask_game_mode_slash(interaction)
 
-        msg = await interaction.channel.send("🧟‍♀️ Zombie survival game starting in...")
-        await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
-        await msg.edit(content="🧟‍♀️ Game loading...")
+    async def ask_game_mode_slash(self, interaction: Interaction):
+        """Ask the user to choose a game mode (slash command version)"""
+        view = discord.ui.View()
+        player_btn = discord.ui.Button(label="Player Game", style=discord.ButtonStyle.blurple, emoji="👤")
+        auto_btn = discord.ui.Button(label="Auto Game", style=discord.ButtonStyle.green, emoji="🤖")
+        
+        async def player_callback(interaction):
+            await interaction.response.edit_message(content="🔄 Starting player game...", view=None)
+            await start_game_async(interaction.user.id, "player")
+            msg = await interaction.channel.send("🧟‍♀️ Zombie survival game starting in...")
+            await countdown_message(msg, 3, "🧟‍♀️ Zombie survival game starting in...")
+            await msg.edit(content="🧟‍♀️ Game loading...")
 
-        logger.info("✅ Countdown finished. Starting run_round...")
-        await self.run_round(interaction.channel)
+            logger.info("✅ Countdown finished. Starting run_round...")
+            await self.run_round(interaction.channel)
+                
+        async def auto_callback(interaction):
+            await interaction.response.edit_message(content="🔄 Starting auto game...", view=None)
+            await start_game_async(interaction.user.id, "auto")
+            msg = await interaction.channel.send("🤖 Auto zombie game starting in...")
+            await countdown_message(msg, 3, "🤖 Auto zombie game starting in...")
+            await msg.edit(content="🤖 Auto game loading...")
+
+            logger.info("✅ Countdown finished. Starting run_round...")
+            await self.run_round(interaction.channel)
+                
+        player_btn.callback = player_callback
+        auto_btn.callback = auto_callback
+        view.add_item(player_btn)
+        view.add_item(auto_btn)
+        
+        await interaction.followup.send("🎮 Choose a game mode:", view=view)
 
     @commands.command(name="endzombie")
     async def end_zombie_game(self, ctx: commands.Context):
@@ -1030,104 +1088,86 @@ class ZombieGame(commands.Cog):
             end_game()
             return
 
-        await channel.send("━━━━━━━━━━━━━━\n🔀 **Choices**\n━━━━━━━━━━━━━━")
-        await stream_bullets_in_message(channel, g.options, "choices")
+        # Apply bold formatting to character names in the options
+        formatted_options = []
+        for option in g.options:
+            formatted_options.append(bold_character_names(option))
 
-        choices_msg = await channel.send("━━━━━━━━━━━━━━\n🗳️ React to vote!")
-        await choices_msg.add_reaction("1️⃣")
-        await choices_msg.add_reaction("2️⃣")
-        
-        # Voting with early termination - affected by speed modifier
-        countdown_duration = int(20 / current_speed)  # Adjust countdown based on speed
-        countdown_msg = await channel.send(f"⏳ Voting ends in {countdown_duration} seconds...")
-        start_time = datetime.utcnow()
-        last_vote_time = start_time
-        votes_cast = set()  # Initialize the set once
-        early_termination = False
-        
-        # Check for votes every second, with early termination
-        for i in range(countdown_duration, 0, -1):
-            if active_game and active_game.terminated:
-                return
-                
-            # Refresh message to get current reactions
-            try:
-                choices_msg = await channel.fetch_message(choices_msg.id)
-                votes = await tally_votes(choices_msg, votes_cast)  # Pass the same set each time
-                
-                # Check if we have votes and if it's been 5 seconds since last vote
-                current_time = datetime.utcnow()
-                if (votes["1️⃣"] > 0 or votes["2️⃣"] > 0) and (current_time - last_vote_time).total_seconds() >= 5:
-                    early_termination = True
-                    break
+        await channel.send("━━━━━━━━━━━━━━\n🔀 **Choices**\n━━━━━━━━━━━━━━")
+        await stream_bullets_in_message(channel, formatted_options, "choices")
+
+        # Handle voting based on game mode
+        if g.game_mode == "auto":
+            # Auto mode - randomly select a choice
+            await asyncio.sleep(get_delay("choices") * 2)  # Short pause for dramatic effect
+            g.last_choice = random.choice(g.options)
+            await channel.send(f"🤖 **Auto-selected**: {g.last_choice}")
+        else:
+            # Player mode - normal voting process
+            choices_msg = await channel.send("━━━━━━━━━━━━━━\n🗳️ React to vote!")
+            await choices_msg.add_reaction("1️⃣")
+            await choices_msg.add_reaction("2️⃣")
+            
+            # Voting with early termination - affected by speed modifier
+            countdown_duration = int(20 / current_speed)  # Adjust countdown based on speed
+            countdown_msg = await channel.send(f"⏳ Voting ends in {countdown_duration} seconds...")
+            start_time = datetime.utcnow()
+            last_vote_time = start_time
+            votes_cast = set()  # Initialize the set once
+            early_termination = False
+            
+            # Check for votes every second, with early termination
+            for i in range(countdown_duration, 0, -1):
+                if active_game and active_game.terminated:
+                    return
                     
-                # Update last vote time if we got new votes
-                if votes["1️⃣"] + votes["2️⃣"] > 0:
-                    last_vote_time = current_time
+                # Refresh message to get current reactions
+                try:
+                    choices_msg = await channel.fetch_message(choices_msg.id)
+                    votes = await tally_votes(choices_msg, votes_cast)  # Pass the same set each time
                     
-            except Exception as e:
-                logger.warning(f"Error fetching votes: {e}")
-                
-            # Update countdown
-            try:
-                await countdown_msg.edit(content=f"⏳ Voting ends in {i} seconds...")
-            except Exception as e:
-                logger.warning(f"Error updating countdown: {e}")
-                
-            await asyncio.sleep(1)
-        
-        # Check for votes every second, with early termination
-        for i in range(countdown_duration, 0, -1):
-            if active_game and active_game.terminated:
-                return
-                
-            # Refresh message to get current reactions
+                    # Check if we have votes and if it's been 5 seconds since last vote
+                    current_time = datetime.utcnow()
+                    if (votes["1️⃣"] > 0 or votes["2️⃣"] > 0) and (current_time - last_vote_time).total_seconds() >= 5:
+                        early_termination = True
+                        break
+                        
+                    # Update last vote time if we got new votes
+                    if votes["1️⃣"] + votes["2️⃣"] > 0:
+                        last_vote_time = current_time
+                        
+                except Exception as e:
+                    logger.warning(f"Error fetching votes: {e}")
+                    
+                # Update countdown
+                try:
+                    await countdown_msg.edit(content=f"⏳ Voting ends in {i} seconds...")
+                except Exception as e:
+                    logger.warning(f"Error updating countdown: {e}")
+                    
+                await asyncio.sleep(1)
+
+            # Final vote tally for player mode
             try:
                 choices_msg = await channel.fetch_message(choices_msg.id)
                 votes = await tally_votes(choices_msg, votes_cast)
                 
-                # Check if we have votes and if it's been 5 seconds since last vote
-                current_time = datetime.utcnow()
-                if (votes["1️⃣"] > 0 or votes["2️⃣"] > 0) and (current_time - last_vote_time).total_seconds() >= 5:
-                    early_termination = True
-                    break
-                    
-                # Update last vote time if we got new votes
-                if votes["1️⃣"] + votes["2️⃣"] > 0:
-                    last_vote_time = current_time
+                # Update countdown message to show voting has finished
+                if early_termination:
+                    await countdown_msg.edit(content="✅ Voting completed early (5 seconds without new votes)")
+                else:
+                    await countdown_msg.edit(content="✅ Voting period ended")
                     
             except Exception as e:
-                logger.warning(f"Error fetching votes: {e}")
-                
-            # Update countdown
-            try:
-                await countdown_msg.edit(content=f"⏳ Voting ends in {i} seconds...")
-            except Exception as e:
-                logger.warning(f"Error updating countdown: {e}")
-                
-            await asyncio.sleep(1)
+                logger.warning(f"Error fetching final votes: {e}")
+                votes = {"1️⃣": 0, "2️⃣": 0}
 
-        # Final vote tally
-        try:
-            choices_msg = await channel.fetch_message(choices_msg.id)
-            votes = await tally_votes(choices_msg, votes_cast)
-            
-            # Update countdown message to show voting has finished
-            if early_termination:
-                await countdown_msg.edit(content="✅ Voting completed early (5 seconds without new votes)")
-            else:
-                await countdown_msg.edit(content="✅ Voting period ended")
-                
-        except Exception as e:
-            logger.warning(f"Error fetching final votes: {e}")
-            votes = {"1️⃣": 0, "2️⃣": 0}
+            if votes["1️⃣"] == 0 and votes["2️⃣"] == 0:
+                await channel.send("No votes cast. Game over.")
+                end_game()
+                return
 
-        if votes["1️⃣"] == 0 and votes["2️⃣"] == 0:
-            await channel.send("No votes cast. Game over.")
-            end_game()
-            return
-
-        g.last_choice = g.options[0] if votes["1️⃣"] >= votes["2️⃣"] else g.options[1]
+            g.last_choice = g.options[0] if votes["1️⃣"] >= votes["2️⃣"] else g.options[1]
 
         outcome_prompt = (
             f"{g.story_context}\n"
