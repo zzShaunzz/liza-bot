@@ -898,7 +898,8 @@ class ZombieGame(commands.Cog):
             # Try to find which character this line refers to
             matched_character = None
             for name in g.alive:
-                if name in line and name not in processed_characters:
+                # Use regex to find whole word matches, even with punctuation
+                if re.search(rf'\b{re.escape(name)}\b', line) and name not in processed_characters:
                     matched_character = name
                     processed_characters.add(name)
                     break
@@ -907,8 +908,17 @@ class ZombieGame(commands.Cog):
                 # Extract health status (everything after the character name)
                 health_status = line.replace(matched_character, '').strip().lstrip(':').strip()
                 
-                # Capitalize first letter
-                health_status = capitalize_first_letter(health_status)
+                # Capitalize only the first letter of the first word, lowercase the rest
+                if health_status:
+                    # Split into words
+                    words = health_status.split()
+                    if words:
+                        # Capitalize first word
+                        words[0] = words[0].capitalize()
+                        # Lowercase all subsequent words
+                        for i in range(1, len(words)):
+                            words[i] = words[i].lower()
+                        health_status = ' '.join(words)
                 
                 # Determine health tier icon
                 if any(word in health_status.lower() for word in ['healthy', 'good', 'strong', 'fine', 'well']):
