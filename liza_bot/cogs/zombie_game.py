@@ -338,29 +338,35 @@ def bold_name(name: str) -> str:
 
 def bold_character_names(text: str) -> str:
     """
-    Properly bold all character names in text, handling both regular and possessive forms.
-    Uses temporary placeholders to avoid replacement conflicts.
+    Smart bolding that handles both first names and full names appropriately.
     """
-    # First pass: replace possessive forms with temporary placeholders
+    # First, create a list of all names sorted by length (longest first)
+    all_names = sorted(CHARACTER_INFO.keys(), key=len, reverse=True)
+    
+    # Process possessive forms with temporary placeholders
     temp_mappings = {}
-    for name in CHARACTER_INFO:
-        # Create unique temporary placeholders
-        straight_temp = f"TEMP_POSS_STRAIGHT_{name}"
-        curly_temp = f"TEMP_POSS_CURLY_{name}"
+    for name in all_names:
+        straight_temp = f"TEMP_POSS_STRAIGHT_{hash(name)}"
+        curly_temp = f"TEMP_POSS_CURLY_{hash(name)}"
         
-        # Replace possessive forms with placeholders
         text = text.replace(f"{name}'s", straight_temp)
         text = text.replace(f"{name}’s", curly_temp)
         
-        # Store the mappings for later restoration
         temp_mappings[straight_temp] = f"**{name}'s**"
         temp_mappings[curly_temp] = f"**{name}’s**"
     
-    # Second pass: bold all regular names
-    for name in CHARACTER_INFO:
-        text = text.replace(name, f"**{name}**")
+    # Process full names first
+    for name in all_names:
+        text = re.sub(rf'\b{re.escape(name)}\b', f"**{name}**", text)
     
-    # Third pass: restore possessive forms with proper bolding
+    # Process first names for all characters
+    for name in all_names:
+        first_name = name.split()[0]
+        # Only bold first name if it's not already part of a bolded full name
+        if f"**{first_name} " not in text:  # Check if first name is part of bolded full name
+            text = re.sub(rf'\b{re.escape(first_name)}\b', f"**{first_name}**", text)
+    
+    # Restore possessive forms
     for temp, replacement in temp_mappings.items():
         text = text.replace(temp, replacement)
     
