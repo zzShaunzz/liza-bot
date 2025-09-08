@@ -337,7 +337,7 @@ def bold_name(name: str) -> str:
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
-    # First handle possessive forms
+    # Handle possessive forms first
     for name in CHARACTER_INFO:
         possessive_pattern = rf"\b({re.escape(name)})'s\b"
         text = re.sub(possessive_pattern, r"**\1**'s", text)
@@ -357,6 +357,12 @@ def format_bullet(text: str) -> str:
         text += '.'
     return f"• {text}"
 
+def capitalize_first_letter(text: str) -> str:
+    """Capitalize the first letter of a string"""
+    if not text:
+        return text
+    return text[0].upper() + text[1:] if len(text) > 1 else text.upper()
+
 def split_into_sentences(text: str) -> list:
     return re.split(r'(?<=[.!?])\s+', text.strip())
 
@@ -366,39 +372,31 @@ def enforce_bullets(text: str) -> list:
     current = ""
 
     for line in lines:
-        stripped = line.strip().lstrip("•").lstrip("*")
+        stripped = line.strip()
         if not stripped:
             continue
-
+            
+        # Clean up bullet markers
+        if stripped.startswith(('•', '-', '*')):
+            stripped = stripped[1:].strip()
+        
         contains_name = any(name.split()[0] in stripped for name in CHARACTER_INFO)
-        is_bullet = line.strip().startswith("•") or line.strip().startswith("*")
-
-        if is_bullet or contains_name:
+        
+        if contains_name or (current and len(current) > 100):
             if current:
-                cleaned = current.strip().rstrip("*")
-                bullets.append(f"• {bold_character_names(cleaned)}")
-            current = stripped
+                bullets.append(f"• {bold_character_names(current.strip())}")
+                current = ""
+            bullets.append(f"• {bold_character_names(stripped)}")
         else:
-            current += " " + stripped
+            if current:
+                current += " " + stripped
+            else:
+                current = stripped
 
     if current:
-        cleaned = current.strip().rstrip("*")
-        bullets.append(f"• {bold_character_names(cleaned)}")
+        bullets.append(f"• {bold_character_names(current.strip())}")
 
-    final_bullets = []
-    for b in bullets:
-        if any(name.split()[0] in b for name in CHARACTER_INFO):
-            final_bullets.append(b)
-        else:
-            for sentence in split_into_sentences(b):
-                if sentence.strip():
-                    final_bullets.append(f"• {sentence.strip()}")
-
-    spaced = []
-    for b in final_bullets:
-        spaced.append(b)
-        spaced.append("")
-    return spaced
+    return bullets
 
 async def stream_bullets_in_message(
     channel: discord.TextChannel,
@@ -440,7 +438,7 @@ async def stream_bullets_in_message(
         except Exception as e:
             logger.warning(f"Edit failed during bullet stream: {cleaned} — {e}")
             # Fallback: send remaining as new message
-            remaining = bullets[i:]  # Safer than using index()
+            remaining = bullets[i:]
             if remaining:
                 await channel.send("\n".join(remaining))
             return
@@ -498,7 +496,7 @@ def build_scene_prompt():
     ])
     return (
         "You are a text-only assistant. Do not generate or suggest images under any circumstances. "
-        "Entire text length should be able to fit within a Discord message (under 2,000 characters)."
+        "Keep scenes concise - maximum 6-8 short bullet points. Each bullet should be 1-2 sentences max."
         "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. Stay fully in-character and in-world."
         "The world has fallen to a zombie outbreak. The youthful survivors are hunted, exhausted, and emotionally frayed. Every scene continues their desperate struggle against the undead and each other."
         "Respond only with narrative, dialogue, and bullet-pointed text.\n\n"
@@ -527,6 +525,7 @@ def build_health_prompt():
         f"{g.story_context}\n"
         f"🧍 Alive: {', '.join(g.alive)}\n\n"
         "🧠 For each character, describe their physical condition in 2–3 words. "
+        "CAPITALIZE the first letter of each description (e.g., 'Alert, tense' not 'alert, tense')."
         "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. Stay fully in-character and in-world."
         "Format each as a bullet point using •."
         "After the bullets, describe the ambient atmosphere in a brief sentence. Do not merge character traits with narration. This should also be its own bullet."
@@ -540,6 +539,7 @@ def build_group_dynamics_prompt():
         f"{g.story_context}\n"
         f"🧍 Alive: {', '.join(g.alive)}\n\n"
         "Summarize the current group dynamics in 3–5 bullet points. Focus only on notable relationship shifts: emerging bonds and rising tensions. Avoid listing every character. Do not repeat previous dynamics unless they've evolved. Keep each bullet short and emotionally resonant."
+        "Format each as a bullet point using • without dashes or extra symbols."
     )
 
 def build_dilemma_prompt(scene_text, health_text):
@@ -549,7 +549,7 @@ def build_dilemma_prompt(scene_text, health_text):
         f"Health:\n{health_text}\n\n"
         "🧠 Describe a new problem that arises, specific to this situation. "
         "Do not include any choices or options. Only describe the situation."
-        "Format as exactly two bullet points using •."
+        "Format as exactly two bullet points using • without dashes."
     )
 
 def build_choices_prompt(dilemma_text):
@@ -563,7 +563,7 @@ def build_choices_prompt(dilemma_text):
 # AI Generators
 async def generate_scene(g):
     raw_scene = await generate_ai_text([
-        {"role": "system", "content": "You are a horror narrator generating cinematic zombie survival scenes."},
+        {"role": "system", "content": "You are a horror narrator generating cinematic zombie survival scenes. Keep scenes concise - maximum 6-8 short bullet points."},
         {"role": "user", "content": build_scene_prompt()}
     ])
     auto_track_deaths(raw_scene, g)
@@ -602,7 +602,7 @@ async def generate_scene_summary(scene_text, g):
 
 async def generate_health_report(g):
     raw_health = await generate_ai_text([
-        {"role": "system", "content": "You are a horror narrator generating a health report."},
+        {"role": "system", "content": "You are a horror narrator generating a health report. CAPITALIZE the first letter of each health description."},
         {"role": "user", "content": build_health_prompt()}
     ])
     auto_track_stats(raw_health, g)
@@ -610,7 +610,7 @@ async def generate_health_report(g):
 
 async def generate_group_dynamics(g):
     raw_dynamics = await generate_ai_text([
-        {"role": "system", "content": "You are a horror narrator describing group dynamics."},
+        {"role": "system", "content": "You are a horror narrator describing group dynamics. Use simple bullet points without dashes."},
         {"role": "user", "content": build_group_dynamics_prompt()}
     ])
     auto_track_stats(raw_dynamics, g)
@@ -622,7 +622,7 @@ async def generate_dilemma(scene_text, health_text, g):
         {"role": "system", "content": (
             "You are a horror narrator generating dilemmas for a survival game. "
             "Do not generate or describe any images. Do not include voting choices. "
-            "Only output text in bullet-point format."
+            "Only output text in bullet-point format without dashes."
         )},
         {"role": "user", "content": build_dilemma_prompt(scene_text, health_text)}
     ], temperature=0.9)
@@ -821,69 +821,22 @@ class ZombieGame(commands.Cog):
         if not raw_scene:
             await channel.send("⚠️ Scene generation failed.")
             return
-        scene_text = bold_character_names(raw_scene)
-
-        # Merge multi-line quotes
-        merged_lines = []
-        quote_buffer = ""
-
-        for line in scene_text.splitlines():
-            stripped = line.strip()
-            if stripped.startswith('"') or quote_buffer:
-                quote_buffer += (" " if quote_buffer else "") + stripped
-                if stripped.endswith('"') or stripped.endswith(('.', '!', '?')):
-                    merged_lines.append(quote_buffer.strip())
-                    quote_buffer = ""
+            
+        # Clean up scene formatting
+        scene_text = raw_scene
+        scene_bullets = []
+        
+        for line in scene_text.split('\n'):
+            line = line.strip()
+            if not line:
                 continue
-            merged_lines.append(stripped)
-
-        scene_text = " ".join(merged_lines)
-
-        # Split into sentences
-        sentences = re.split(r'(?<=[.!?])\s+', scene_text)
-
-        # Format bullets
-        scene_bullets = [
-            format_bullet(bold_character_names(s.strip().lstrip("•")))
-            for s in scene_text.split("•")
-            if s.strip()
-        ]
-
-        # Fuse quote bullets with speaker actions
-        fused_bullets = []
-        quote_buffer = ""
-        quote_ready = False
-        
-        for line in scene_bullets:
-            stripped = line.strip()
-        
-            # Start or continue a quote
-            if stripped.startswith('"') or quote_buffer:
-                quote_buffer += (" " if quote_buffer else "") + stripped
-        
-                # Mark quote as ready if it ends
-                if stripped.endswith('"') or stripped.endswith(('.', '!', '?')):
-                    quote_ready = True
-                continue  # Wait for next line to fuse into
-        
-            # If we have a quote waiting, fuse it into this line — only if it's a speaker action
-            if quote_buffer:
-                if ":" in stripped:  # Likely a character line
-                    fused_bullets.append(f"{stripped} {quote_buffer}".strip())
-                else:
-                    # No speaker line — flush quote first, then ambient
-                    fused_bullets.append(quote_buffer.strip())
-                    fused_bullets.append(stripped)
-                quote_buffer = ""
-                quote_ready = False
-            else:
-                fused_bullets.append(stripped)
-        
-        # Final flush: if quote_buffer still exists, append it
-        if quote_buffer:
-            fused_bullets.append(quote_buffer.strip())
-        
-        scene_bullets = fused_bullets
+                
+            # Clean up bullet markers
+            if line.startswith(('•', '-', '*')):
+                line = line[1:].strip()
+                
+            if line:
+                scene_bullets.append(f"• {bold_character_names(line)}")
 
         # Stream scene bullets
         await channel.send(f"━━━━━━━━━━━━━━\n🎭 **Scene {g.round_number}**\n━━━━━━━━━━━━━━")
@@ -932,6 +885,9 @@ class ZombieGame(commands.Cog):
                 # Extract health status (everything after the character name)
                 health_status = line.replace(matched_character, '').strip().lstrip(':').strip()
                 
+                # Capitalize first letter
+                health_status = capitalize_first_letter(health_status)
+                
                 # Determine health tier icon
                 if any(word in health_status.lower() for word in ['healthy', 'good', 'strong', 'fine', 'well']):
                     icon = "🟢"
@@ -952,7 +908,7 @@ class ZombieGame(commands.Cog):
                 health_lines.append(formatted_line)
             else:
                 # Line doesn't contain a character name, add as-is
-                health_lines.append(f"• {line}")
+                health_lines.append(f"• {capitalize_first_letter(line)}")
 
         # Add any missing characters
         for name in g.alive:
@@ -970,15 +926,21 @@ class ZombieGame(commands.Cog):
         # Phase 3b: Group Dynamics
         raw_dynamics = await generate_group_dynamics(g)
         if raw_dynamics:
-            raw_bolded_dynamics = bold_character_names(raw_dynamics)
-            enforced_dynamics = enforce_bullets(raw_bolded_dynamics)
-
-            # Add emojis to character dynamics
+            # Clean up dynamics formatting
             dynamics_bullets = []
-            for line in enforced_dynamics:
-                if line.strip() and line.strip() != "•":
-                    formatted_line = line
+            for line in raw_dynamics.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Clean up bullet markers and dashes
+                if line.startswith(('•', '-', '*')):
+                    line = line[1:].strip()
+                line = line.lstrip('-').strip()
+                
+                if line:
                     # Add emojis to character names in dynamics
+                    formatted_line = bold_character_names(line)
                     for name, info in CHARACTER_INFO.items():
                         if name in line and name in g.alive:
                             emoji_name = info["emoji"]
@@ -987,29 +949,31 @@ class ZombieGame(commands.Cog):
                                 formatted_line = formatted_line.replace(bold_name(name), f"{bold_name(name)} {emoji}")
                             else:
                                 formatted_line = formatted_line.replace(bold_name(name), f"{bold_name(name)} :{emoji_name}:")
-                    dynamics_bullets.append(formatted_line)
+                    dynamics_bullets.append(f"• {formatted_line}")
 
             await channel.send("━━━━━━━━━━━━━━\n💬 **Group Dynamics**\n━━━━━━━━━━━━━━")
             await stream_bullets_in_message(channel, dynamics_bullets, "dynamics")
 
         # Phase 4: Dilemma
-        dilemma_bullets = []
-
         raw_dilemma = await generate_dilemma(raw_scene, raw_health, g)
         if not raw_dilemma:
             await channel.send("⚠️ Dilemma generation failed.")
             return
 
-        filtered_lines = [
-            line for line in raw_dilemma.splitlines()
-            if not line.strip().startswith(("A.", "B.", "C.", "D.", "E.", "F.", "What do you do?"))
-        ]
-
-        dilemma_bullets = [
-            format_bullet(bold_character_names(line.lstrip("•").strip()))
-            for line in filtered_lines
-            if line.strip() and line.strip() != "•"
-        ]
+        # Clean up dilemma formatting
+        dilemma_bullets = []
+        for line in raw_dilemma.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Clean up bullet markers and dashes
+            if line.startswith(('•', '-', '*')):
+                line = line[1:].strip()
+            line = line.lstrip('-').strip()
+            
+            if line and not any(line.startswith(x) for x in ['A.', 'B.', 'C.', 'D.', 'E.', 'F.', 'What do you do?']):
+                dilemma_bullets.append(f"• {bold_character_names(line)}")
 
         await channel.send(f"━━━━━━━━━━━━━━\n🧠 **Dilemma – Round {g.round_number}**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, dilemma_bullets, "dilemma")
@@ -1040,6 +1004,8 @@ class ZombieGame(commands.Cog):
         countdown_msg = await channel.send(f"⏳ Voting ends in {countdown_duration} seconds...")
         start_time = datetime.utcnow()
         last_vote_time = start_time
+        votes_cast = set()
+        early_termination = False
         
         # Check for votes every second, with early termination
         for i in range(countdown_duration, 0, -1):
@@ -1049,15 +1015,17 @@ class ZombieGame(commands.Cog):
             # Refresh message to get current reactions
             try:
                 choices_msg = await channel.fetch_message(choices_msg.id)
-                votes = await tally_votes(choices_msg)
+                votes = await tally_votes(choices_msg, votes_cast)
                 
                 # Check if we have votes and if it's been 5 seconds since last vote
-                if (votes["1️⃣"] > 0 or votes["2️⃣"] > 0) and (datetime.utcnow() - last_vote_time).total_seconds() >= 5:
+                current_time = datetime.utcnow()
+                if (votes["1️⃣"] > 0 or votes["2️⃣"] > 0) and (current_time - last_vote_time).total_seconds() >= 5:
+                    early_termination = True
                     break
                     
                 # Update last vote time if we got new votes
                 if votes["1️⃣"] + votes["2️⃣"] > 0:
-                    last_vote_time = datetime.utcnow()
+                    last_vote_time = current_time
                     
             except Exception as e:
                 logger.warning(f"Error fetching votes: {e}")
@@ -1071,8 +1039,19 @@ class ZombieGame(commands.Cog):
             await asyncio.sleep(1)
 
         # Final vote tally
-        choices_msg = await channel.fetch_message(choices_msg.id)
-        votes = await tally_votes(choices_msg)
+        try:
+            choices_msg = await channel.fetch_message(choices_msg.id)
+            votes = await tally_votes(choices_msg, votes_cast)
+            
+            # Update countdown message to show voting has finished
+            if early_termination:
+                await countdown_msg.edit(content="✅ Voting completed early (5 seconds without new votes)")
+            else:
+                await countdown_msg.edit(content="✅ Voting period ended")
+                
+        except Exception as e:
+            logger.warning(f"Error fetching final votes: {e}")
+            votes = {"1️⃣": 0, "2️⃣": 0}
 
         if votes["1️⃣"] == 0 and votes["2️⃣"] == 0:
             await channel.send("No votes cast. Game over.")
@@ -1121,24 +1100,18 @@ class ZombieGame(commands.Cog):
 
         await channel.send(f"━━━━━━━━━━━━━━━━━━━━━━━\n     🩸 End of Round {g.round} 🩸\n━━━━━━━━━━━━━━━━━━━━━━━")
 
-        sentences = re.split(r'(?<=[.!?])\s+', raw_outcome)
-        bulleted_narration = [
-            format_bullet(bold_character_names(s.strip().lstrip("•")))
-            for s in sentences
-            if s.strip() and s.strip() != "•"
-        ]
-
-        cleaned_narration = []
-        for line in bulleted_narration:
-            match = re.search(r"(\*\*.*?\*\*:.*?)(?=\s+[A-Z])", line)
-            if match:
-                split_index = match.end()
-                cleaned_narration.append(line[:split_index].strip())
-                cleaned_narration.append(line[split_index:].strip())
-            else:
-                cleaned_narration.append(line)
-
-        bulleted_narration = cleaned_narration
+        # Process outcome bullets
+        outcome_bullets = []
+        for line in outcome_text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith(('•', '-', '*')):
+                line = line[1:].strip()
+                
+            if line:
+                outcome_bullets.append(f"• {bold_character_names(line)}")
 
         # NOW ask the AI to explicitly list deaths in a structured way
         death_detection_prompt = (
@@ -1196,12 +1169,12 @@ class ZombieGame(commands.Cog):
             else:
                 formatted_survivors.append(f"• {bold_name(name)} :{emoji_name}:")
 
-        if not bulleted_narration:
+        if not outcome_bullets:
             await channel.send("⚠️ No outcome narration was generated.")
             return
         
         await channel.send("━━━━━━━━━━━━━━\n📘 **Outcome**\n━━━━━━━━━━━━━━")
-        await stream_bullets_in_message(channel, bulleted_narration, "summary")
+        await stream_bullets_in_message(channel, outcome_bullets, "summary")
             
         narration_only = raw_scene
         g.story_context += narration_only + "\n"
@@ -1377,14 +1350,15 @@ def auto_track_relationships(text: str, g):
 def get_top_stat(stat_dict):
     return max(stat_dict.items(), key=lambda x: x[1])[0] if stat_dict else "None"
 
-async def tally_votes(message):
+async def tally_votes(message, votes_cast):
     votes = {"1️⃣": 0, "2️⃣": 0}
     for reaction in message.reactions:
         if reaction.emoji in votes:
             users = [user async for user in reaction.users()]
             for user in users:
-                if not user.bot:
+                if not user.bot and user.id not in votes_cast:
                     votes[reaction.emoji] += 1
+                    votes_cast.add(user.id)
     return votes
 
 # Cog setup
