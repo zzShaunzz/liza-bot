@@ -7,6 +7,8 @@ import aiohttp
 import discord
 import random
 import json
+import sqlite3
+from datetime import datetime
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import Interaction
@@ -46,6 +48,41 @@ SPEED_SETTINGS = {
 # Global variables
 active_game = None
 current_speed = 1.0
+
+# Database setup for leaderboard
+def init_db():
+    conn = sqlite3.connect('zombie_leaderboard.db')
+    c = conn.cursor()
+    
+    # Create tables if they don't exist
+    c.execute('''CREATE TABLE IF NOT EXISTS games
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  initiator INTEGER,
+                  winner TEXT,
+                  completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS character_stats
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  character_name TEXT,
+                  game_id INTEGER,
+                  death_round INTEGER,
+                  survived BOOLEAN,
+                  FOREIGN KEY (game_id) REFERENCES games (id))''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS relationships
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  character1 TEXT,
+                  character2 TEXT,
+                  game_id INTEGER,
+                  bond_strength INTEGER DEFAULT 0,
+                  conflict_strength INTEGER DEFAULT 0,
+                  FOREIGN KEY (game_id) REFERENCES games (id))''')
+    
+    conn.commit()
+    conn.close()
+
+# Initialize database
+init_db()
 
 # OpenRouter Request with Key Rotation
 def is_key_on_cooldown(key):
@@ -276,7 +313,10 @@ class GameState:
         game = cls(data["initiator"], data.get("game_mode", "player"))
         game.round = data["round"]
         game.alive = data["alive"]
-        game.dead = data["dead"]
+        
+        # Ensure dead list contains only unique entries
+        game.dead = list(dict.fromkeys(data["dead"]))  # This preserves order while removing duplicates
+        
         game.last_choice = data["last_choice"]
         game.last_events = data["last_events"]
         game.options = data["options"]
@@ -293,6 +333,55 @@ class GameState:
         """Delete the save file"""
         if os.path.exists(self.save_file):
             os.remove(self.save_file)
+
+    def save_to_leaderboard(self, winner=None):
+        """Save game results to leaderboard database"""
+        try:
+            conn = sqlite3.connect('zombie_leaderboard.db')
+            c = conn.cursor()
+            
+            # Insert game record
+            c.execute("INSERT INTO games (initiator, winner) VALUES (?, ?)",
+                     (self.initiator, winner))
+            game_id = c.lastrowid
+            
+            # Insert character stats
+            for char in CHARACTERS:
+                survived = char in self.alive
+                death_round = None
+                
+                # Find death round if character died
+                if not survived:
+                    # This is a simplified approach - in a real implementation,
+                    # you'd track the actual round each character died
+                    death_round = self.round
+                
+                c.execute('''INSERT INTO character_stats 
+                            (character_name, game_id, death_round, survived)
+                            VALUES (?, ?, ?, ?)''',
+                         (char, game_id, death_round, survived))
+            
+            # Insert relationship data
+            for (char1, char2), bond_strength in self.stats["bonds"].items():
+                if bond_strength > 0:
+                    c.execute('''INSERT INTO relationships 
+                                (character1, character2, game_id, bond_strength)
+                                VALUES (?, ?, ?, ?)''',
+                             (char1, char2, game_id, bond_strength))
+            
+            for (char1, char2), conflict_strength in self.stats["conflicts"].items():
+                if conflict_strength > 0:
+                    c.execute('''INSERT INTO relationships 
+                                (character1, character2, game_id, conflict_strength)
+                                VALUES (?, ?, ?, ?)''',
+                             (char1, char2, game_id, conflict_strength))
+            
+            conn.commit()
+            conn.close()
+            logger.info("Game results saved to leaderboard")
+            
+        except Exception as e:
+            logger.error(f"Error saving to leaderboard: {e}")
 
 def end_game():
     global active_game
@@ -584,6 +673,17 @@ def build_choices_prompt(dilemma_text):
         "Format each as a numbered bullet starting with '1.' and '2.'."
     )
 
+def build_full_recap_prompt():
+    g = active_game
+    return (
+        f"Complete Story Context:\n{g.story_context}\n\n"
+        f"Final Survivors: {', '.join(g.alive) if g.alive else 'None'}\n"
+        f"Characters Who Died: {', '.join(g.dead) if g.dead else 'None'}\n\n"
+        "🎬 Write a brief cinematic recap of the ENTIRE game story in 3-5 bullet points. "
+        "Include how it began, key turning points, and how it concluded. Focus on the overall narrative arc."
+        "Format each as a bullet point using •."
+    )
+
 # AI Generators
 async def generate_scene(g):
     raw_scene = await generate_ai_text([
@@ -659,6 +759,67 @@ async def generate_choices(dilemma_text):
         {"role": "user", "content": build_choices_prompt(dilemma_text)}
     ], temperature=0.8)
     return raw_choices
+
+async def generate_full_recap(g):
+    raw_recap = await generate_ai_text([
+        {"role": "system", "content": "You are a horror narrator creating a cinematic recap of an entire zombie survival story."},
+        {"role": "user", "content": build_full_recap_prompt()}
+    ], temperature=0.7)
+    return raw_recap
+
+# Leaderboard functions
+def get_leaderboard_stats():
+    """Get leaderboard statistics from database"""
+    try:
+        conn = sqlite3.connect('zombie_leaderboard.db')
+        c = conn.cursor()
+        
+        # Character wins
+        c.execute('''SELECT character_name, COUNT(*) as wins 
+                    FROM character_stats 
+                    WHERE survived = 1 
+                    GROUP BY character_name 
+                    ORDER BY wins DESC''')
+        wins = c.fetchall()
+        
+        # Early deaths (died in round 1)
+        c.execute('''SELECT character_name, COUNT(*) as early_deaths 
+                    FROM character_stats 
+                    WHERE death_round = 1 
+                    GROUP BY character_name 
+                    ORDER BY early_deaths DESC''')
+        early_deaths = c.fetchall()
+        
+        # Most common bonds
+        c.execute('''SELECT character1, character2, SUM(bond_strength) as total_bond
+                    FROM relationships 
+                    WHERE bond_strength > 0
+                    GROUP BY character1, character2 
+                    ORDER BY total_bond DESC 
+                    LIMIT 10''')
+        bonds = c.fetchall()
+        
+        # Most common conflicts
+        c.execute('''SELECT character1, character2, SUM(conflict_strength) as total_conflict
+                    FROM relationships 
+                    WHERE conflict_strength > 0
+                    GROUP BY character1, character2 
+                    ORDER BY total_conflict DESC 
+                    LIMIT 10''')
+        conflicts = c.fetchall()
+        
+        conn.close()
+        
+        return {
+            "wins": wins,
+            "early_deaths": early_deaths,
+            "bonds": bonds,
+            "conflicts": conflicts
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting leaderboard stats: {e}")
+        return None
 
 class ZombieGame(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -881,6 +1042,78 @@ class ZombieGame(commands.Cog):
         active_game.save()
         await interaction.response.send_message(f"⚡ Game speed set to {speed}x")
 
+    @commands.command(name="zombieleaderboard")
+    async def zombie_leaderboard_legacy(self, ctx: commands.Context):
+        """Show zombie game leaderboard"""
+        await ctx.send("📊 Generating leaderboard...")
+        
+        stats = get_leaderboard_stats()
+        if not stats:
+            await ctx.send("❌ No leaderboard data available yet.")
+            return
+        
+        # Create leaderboard embed
+        embed = discord.Embed(
+            title="🧟 Zombie Survival Leaderboard",
+            description="Statistics from all completed games",
+            color=0x00ff00
+        )
+        
+        # Wins
+        wins_text = "\n".join([f"{name}: {wins} wins" for name, wins in stats["wins"][:5]]) if stats["wins"] else "No wins recorded yet"
+        embed.add_field(name="🏆 Most Wins", value=wins_text, inline=False)
+        
+        # Early deaths
+        early_deaths_text = "\n".join([f"{name}: {deaths} early deaths" for name, deaths in stats["early_deaths"][:5]]) if stats["early_deaths"] else "No early deaths recorded yet"
+        embed.add_field(name="💀 Most Early Deaths (Round 1)", value=early_deaths_text, inline=False)
+        
+        # Strongest bonds
+        bonds_text = "\n".join([f"{char1} & {char2}: {bond}" for char1, char2, bond in stats["bonds"][:3]]) if stats["bonds"] else "No bond data yet"
+        embed.add_field(name="🤝 Strongest Bonds", value=bonds_text, inline=False)
+        
+        # Strongest conflicts
+        conflicts_text = "\n".join([f"{char1} vs {char2}: {conflict}" for char1, char2, conflict in stats["conflicts"][:3]]) if stats["conflicts"] else "No conflict data yet"
+        embed.add_field(name="⚔️ Biggest Conflicts", value=conflicts_text, inline=False)
+        
+        embed.set_footer(text="Play more games to see more statistics!")
+        await ctx.send(embed=embed)
+
+    @app_commands.command(name="zombieleaderboard", description="Show zombie game leaderboard statistics")
+    async def zombie_leaderboard_slash(self, interaction: Interaction):
+        """Show zombie game leaderboard (slash command)"""
+        await interaction.response.defer()
+        
+        stats = get_leaderboard_stats()
+        if not stats:
+            await interaction.followup.send("❌ No leaderboard data available yet.")
+            return
+        
+        # Create leaderboard embed
+        embed = discord.Embed(
+            title="🧟 Zombie Survival Leaderboard",
+            description="Statistics from all completed games",
+            color=0x00ff00
+        )
+        
+        # Wins
+        wins_text = "\n".join([f"{name}: {wins} wins" for name, wins in stats["wins"][:5]]) if stats["wins"] else "No wins recorded yet"
+        embed.add_field(name="🏆 Most Wins", value=wins_text, inline=False)
+        
+        # Early deaths
+        early_deaths_text = "\n".join([f"{name}: {deaths} early deaths" for name, deaths in stats["early_deaths"][:5]]) if stats["early_deaths"] else "No early deaths recorded yet"
+        embed.add_field(name="💀 Most Early Deaths (Round 1)", value=early_deaths_text, inline=False)
+        
+        # Strongest bonds
+        bonds_text = "\n".join([f"{char1} & {char2}: {bond}" for char1, char2, bond in stats["bonds"][:3]]) if stats["bonds"] else "No bond data yet"
+        embed.add_field(name="🤝 Strongest Bonds", value=bonds_text, inline=False)
+        
+        # Strongest conflicts
+        conflicts_text = "\n".join([f"{char1} vs {char2}: {conflict}" for char1, char2, conflict in stats["conflicts"][:3]]) if stats["conflicts"] else "No conflict data yet"
+        embed.add_field(name="⚔️ Biggest Conflicts", value=conflicts_text, inline=False)
+        
+        embed.set_footer(text="Play more games to see more statistics!")
+        await interaction.followup.send(embed=embed)
+
     async def run_round(self, channel: discord.TextChannel):
         if not active_game or active_game.terminated:
             await channel.send("🛑 Game has been terminated.")
@@ -933,9 +1166,14 @@ class ZombieGame(commands.Cog):
             await channel.send("⚠️ No summary was generated.")
             return
 
+        # Clean up the summary text - remove any bullet points or asterisks
+        cleaned_summary = raw_summary.strip()
+        cleaned_summary = re.sub(r'^[•\*\s]+', '', cleaned_summary, flags=re.MULTILINE)  # Remove bullet markers
+        cleaned_summary = re.sub(r'\s+', ' ', cleaned_summary)  # Clean up extra spaces
+
         await channel.send("━━━━━━━━━━━━━━\n📝 **Scene Summary**\n━━━━━━━━━━━━━━")
-        await channel.send(bold_character_names(raw_summary.strip()))
-        g.story_context += f"Summary: {raw_summary.strip()}\n"
+        await channel.send(bold_character_names(cleaned_summary))
+        g.story_context += f"Summary: {cleaned_summary}\n"
 
         # Phase 3: Health
         raw_health = await generate_health_report(g)
@@ -955,12 +1193,24 @@ class ZombieGame(commands.Cog):
             
             # Try to find which character this line refers to
             matched_character = None
+
+            # First try to match full names
             for name in g.alive:
-                # Use regex to find whole word matches, even with punctuation
-                if re.search(rf'\b{re.escape(name)}\b', line) and name not in processed_characters:
+                if re.search(rf'\b{re.escape(name)}\b', line, re.IGNORECASE) and name not in processed_characters:
                     matched_character = name
                     processed_characters.add(name)
                     break
+
+            # If no full name match, try matching first names
+            if not matched_character:
+                for name in g.alive:
+                    first_name = name.split()[0]
+                    # Match first name followed by colon or at the start of the line
+                    if (re.search(rf'\b{re.escape(first_name)}[:,\s]', line, re.IGNORECASE) or 
+                        line.lower().startswith(first_name.lower())) and name not in processed_characters:
+                        matched_character = name
+                        processed_characters.add(name)
+                        break
             
             if matched_character:
                 # Extract health status (everything after the character name)
@@ -1252,10 +1502,12 @@ class ZombieGame(commands.Cog):
                         # Find matching character
                         for char_name in g.alive[:]:
                             if char_name.lower() == death_name.lower():
-                                g.alive.remove(char_name)
-                                g.dead.append(char_name)
-                                new_deaths.append(char_name)
-                                logger.info(f"☠️ {char_name} marked dead from AI death analysis")
+                                # Check if character is already dead to prevent duplicates
+                                if char_name not in g.dead:
+                                    g.alive.remove(char_name)
+                                    g.dead.append(char_name)
+                                    new_deaths.append(char_name)
+                                    logger.info(f"☠️ {char_name} marked dead from AI death analysis")
         
         g.dead.extend(new_deaths)
 
@@ -1308,10 +1560,22 @@ class ZombieGame(commands.Cog):
         if len(g.alive) <= 1:
             if len(g.alive) == 1:
                 survivor = g.alive[0]
-                emoji = CHARACTER_INFO.get(survivor, {}).get("emoji", "")
-                await channel.send(f"🏆 {bold_name(survivor)} :{emoji}: is the sole survivor!")
+                emoji_name = CHARACTER_INFO.get(survivor, {}).get("emoji", "")
+                # Try to get the actual emoji object from the server
+                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+                if emoji:
+                    await channel.send(f"🏆 {bold_name(survivor)} {emoji} is the sole survivor!")
+                else:
+                    # Fallback to text representation if emoji not found
+                    await channel.send(f"🏆 {bold_name(survivor)} :{emoji_name}: is the sole survivor!")
+                
+                # Save to leaderboard
+                g.save_to_leaderboard(winner=survivor)
             else:
                 await channel.send("💀 No survivors remain.")
+                # Save to leaderboard with no winner
+                g.save_to_leaderboard()
+                
             await self.end_summary(channel)
             end_game()
             return
@@ -1336,7 +1600,7 @@ class ZombieGame(commands.Cog):
                 deaths_block.append(f"• {bold_name(name)} {emoji}")
             else:
                 deaths_block.append(f"• {bold_name(name)} :{emoji_name}:")
-    
+
         if not deaths_block:
             deaths_block = ["• None"]
         await channel.send("🪦 **Deaths (most recent first)**")
@@ -1366,33 +1630,33 @@ class ZombieGame(commands.Cog):
     
         final_stats = [line for line in final_stats if "None" not in line]
     
-        await channel.send("━━━━━━━━━━━━━━\n📊 **Final Stats**")
+        await channel.send("━━━━━━━━━━━━━━\n📊 **Final Stats**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, final_stats, "stats")
     
-        # Only generate recap if game wasn't manually terminated mid-round
+        # Generate full game recap
         if g.story_context and g.last_choice:
-            recap_prompt = (
-                f"{g.story_context}\n"
-                f"Deaths: {', '.join(g.dead)}\n"
-                f"Survivors: {', '.join(g.alive)}\n"
-                f"Key choices made: {g.last_choice}\n"
-                f"Strongest bond: {bond_pair[0]} & {bond_pair[1]}\n"
-                f"Biggest conflict: {conflict_pair[0]} vs {conflict_pair[1]}\n\n"
-                "🎬 Write a brief cinematic recap of the entire game in bullet points."
-            )
-            raw_summary = await generate_scene_summary(recap_prompt, g)
-            if raw_summary:
-                summary_bullets = [
-                    format_bullet(bold_character_names(line.lstrip("•").strip()))
-                    for line in raw_summary.splitlines()
-                    if line.strip() and line.strip() != "•"
-                ]
-                await channel.send("🧠 **Scene Summary**")
-                await stream_bullets_in_message(channel, summary_bullets, "summary")
+            raw_recap = await generate_full_recap(g)
+            if raw_recap:
+                # Process recap bullets
+                recap_bullets = []
+                for line in raw_recap.split('\n'):
+                    line = line.strip()
+                    if not line:
+                        continue
+                        
+                    # Clean up bullet markers
+                    if line.startswith(('•', '-', '*')):
+                        line = line[1:].strip()
+                        
+                    if line:
+                        recap_bullets.append(f"• {bold_character_names(line)}")
+                
+                await channel.send("━━━━━━━━━━━━━━\n🧠 **Game Recap**\n━━━━━━━━━━━━━━")
+                await stream_bullets_in_message(channel, recap_bullets, "summary")
             else:
-                await channel.send("📝 *No AI recap generated due to manual termination*")
+                await channel.send("📝 *No AI recap generated*")
         else:
-            await channel.send("📝 *Game ended manually before any story developed*")
+            await channel.send("📝 *Game ended before any story developed*")
         
         await channel.send("🎬 Thanks for surviving (or not) the zombie apocalypse. Until next time...")
 
@@ -1409,9 +1673,11 @@ def auto_track_deaths(raw_scene: str, g):
                     "slumps", "sinks", "submerged", "yanked", "gone", "lost", "devoured", "bitten", "torn",
                     "dies", "killed", "death", "dead", "perish", "succumb"
                 ]) or cleaned.endswith(("slumps.", "vanishes.", "is gone.", "is lost.", "is dragged under.", "is crushed.", "dies.")):
-                    g.dead.append(name)
-                    g.alive.remove(name)
-                    print(f"☠️ {name} marked dead based on bullet: {bullet.strip()}")
+                    # Check if character is already dead to prevent duplicates
+                    if name not in g.dead:
+                        g.dead.append(name)
+                        g.alive.remove(name)
+                        print(f"☠️ {name} marked dead based on bullet: {bullet.strip()}")
 
 def merge_broken_quotes(lines):
     merged = []
