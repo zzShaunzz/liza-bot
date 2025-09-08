@@ -337,18 +337,32 @@ def bold_name(name: str) -> str:
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
-    # Use a single pass with careful replacement
+    """
+    Properly bold all character names in text, handling both regular and possessive forms.
+    Uses temporary placeholders to avoid replacement conflicts.
+    """
+    # First pass: replace possessive forms with temporary placeholders
+    temp_mappings = {}
     for name in CHARACTER_INFO:
-        # First handle possessive forms (both apostrophe types)
-        text = text.replace(f"{name}'s", f"TEMP_{name}_POSS")
-        text = text.replace(f"{name}’s", f"TEMP_{name}_POSS_CURLY")
+        # Create unique temporary placeholders
+        straight_temp = f"TEMP_POSS_STRAIGHT_{name}"
+        curly_temp = f"TEMP_POSS_CURLY_{name}"
         
-        # Then handle regular names
+        # Replace possessive forms with placeholders
+        text = text.replace(f"{name}'s", straight_temp)
+        text = text.replace(f"{name}’s", curly_temp)
+        
+        # Store the mappings for later restoration
+        temp_mappings[straight_temp] = f"**{name}'s**"
+        temp_mappings[curly_temp] = f"**{name}’s**"
+    
+    # Second pass: bold all regular names
+    for name in CHARACTER_INFO:
         text = text.replace(name, f"**{name}**")
-        
-        # Then restore possessive forms with proper bolding
-        text = text.replace(f"TEMP_{name}_POSS", f"**{name}'s**")
-        text = text.replace(f"TEMP_{name}_POSS_CURLY", f"**{name}’s**")
+    
+    # Third pass: restore possessive forms with proper bolding
+    for temp, replacement in temp_mappings.items():
+        text = text.replace(temp, replacement)
     
     return text
 
