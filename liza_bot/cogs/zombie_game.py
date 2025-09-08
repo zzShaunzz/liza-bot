@@ -337,16 +337,17 @@ def bold_name(name: str) -> str:
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
-    # Handle possessive forms first (both straight and curly apostrophes)
+    # First, handle regular names (without apostrophes)
+    for name in CHARACTER_INFO:
+        # Use word boundaries to avoid matching names that are already part of possessive forms
+        text = re.sub(rf'\b{re.escape(name)}\b(?!\'|’s)', f"**{name}**", text)
+    
+    # Then handle possessive forms with both types of apostrophes
     for name in CHARACTER_INFO:
         # Handle straight apostrophe: name's
         text = text.replace(f"{name}'s", f"**{name}'s**")
-        # Handle curly apostrophe: name’s  
-        text = text.replace(f"{name}’s", f"**{name}'s**")
-    
-    # Then handle regular names
-    for name in CHARACTER_INFO:
-        text = text.replace(name, f"**{name}**")
+        # Handle curly apostrophe: name’s
+        text = text.replace(f"{name}’s", f"**{name}’s**")
     
     return text
 
@@ -902,9 +903,9 @@ class ZombieGame(commands.Cog):
                 emoji_name = CHARACTER_INFO[matched_character]["emoji"]
                 emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
                 if emoji:
-                    formatted_line = f"{icon} {bold_name(matched_character)} {emoji} - {health_status}"
+                    formatted_line = f"{icon} {bold_name(matched_character)} {emoji} : {health_status}"
                 else:
-                    formatted_line = f"{icon} {bold_name(matched_character)} :{emoji_name}: - {health_status}"
+                    formatted_line = f"{icon} {bold_name(matched_character)} :{emoji_name}: : {health_status}"
                 health_lines.append(formatted_line)
             else:
                 # Line doesn't contain a character name, add as-is
@@ -939,16 +940,22 @@ class ZombieGame(commands.Cog):
                 line = line.lstrip('-').strip()
                 
                 if line:
-                    # Add emojis to character names in dynamics
+                    # Process bolding FIRST, then add emojis OUTSIDE the bold tags
                     formatted_line = bold_character_names(line)
                     for name, info in CHARACTER_INFO.items():
                         if name in line and name in g.alive:
                             emoji_name = info["emoji"]
                             emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
                             if emoji:
-                                formatted_line = formatted_line.replace(bold_name(name), f"{bold_name(name)} {emoji}")
+                                # Replace the bolded name with bolded name + emoji (outside bold)
+                                formatted_line = formatted_line.replace(f"**{name}**", f"**{name}** {emoji}")
+                                formatted_line = formatted_line.replace(f"**{name}'s**", f"**{name}'s** {emoji}")
+                                formatted_line = formatted_line.replace(f"**{name}’s**", f"**{name}’s** {emoji}")
                             else:
-                                formatted_line = formatted_line.replace(bold_name(name), f"{bold_name(name)} :{emoji_name}:")
+                                formatted_line = formatted_line.replace(f"**{name}**", f"**{name}** :{emoji_name}:")
+                                formatted_line = formatted_line.replace(f"**{name}'s**", f"**{name}'s** :{emoji_name}:")
+                                formatted_line = formatted_line.replace(f"**{name}’s**", f"**{name}’s** :{emoji_name}:")
+                    
                     dynamics_bullets.append(f"• {formatted_line}")
 
             await channel.send("━━━━━━━━━━━━━━\n💬 **Group Dynamics**\n━━━━━━━━━━━━━━")
