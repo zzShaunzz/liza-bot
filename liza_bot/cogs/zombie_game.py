@@ -337,17 +337,12 @@ def bold_name(name: str) -> str:
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
-    # First handle possessive forms
+    # Simple string replacement approach - no regex issues
     for name in CHARACTER_INFO:
-        possessive_pattern = rf"\b({re.escape(name)})'s\b"
-        text = re.sub(possessive_pattern, r"**\1**'s", text)
-    
-    # Then handle regular names (process longer names first to avoid partial matches)
-    sorted_names = sorted(CHARACTER_INFO.keys(), key=len, reverse=True)
-    for name in sorted_names:
-        # Simple word boundary matching without lookarounds
-        name_pattern = rf"\b{re.escape(name)}\b"
-        text = re.sub(name_pattern, r"**\1**", text)
+        # Replace full name occurrences
+        text = text.replace(name, f"**{name}**")
+        # Replace possessive forms
+        text = text.replace(f"{name}'s", f"**{name}**'s")
     
     return text
 
