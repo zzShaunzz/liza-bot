@@ -345,8 +345,8 @@ def bold_character_names(text: str) -> str:
     # Then handle regular names (process longer names first to avoid partial matches)
     sorted_names = sorted(CHARACTER_INFO.keys(), key=len, reverse=True)
     for name in sorted_names:
-        # Use negative lookbehind and lookahead to avoid matching already bolded text
-        name_pattern = rf"(?<!\*)\b({re.escape(name)})\b(?!\*)"
+        # Simple word boundary matching without lookarounds
+        name_pattern = rf"\b{re.escape(name)}\b"
         text = re.sub(name_pattern, r"**\1**", text)
     
     return text
