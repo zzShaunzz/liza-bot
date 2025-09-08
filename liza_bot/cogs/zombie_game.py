@@ -337,12 +337,12 @@ def bold_name(name: str) -> str:
     return f"**{name}**"
 
 def bold_character_names(text: str) -> str:
-    # Handle both straight and curly apostrophes in possessive forms
+    # Handle possessive forms first (both straight and curly apostrophes)
     for name in CHARACTER_INFO:
         # Handle straight apostrophe: name's
-        text = text.replace(f"{name}'s", f"**{name}**'s")
-        # Handle curly apostrophe: name’s
-        text = text.replace(f"{name}’s", f"**{name}**'s")
+        text = text.replace(f"{name}'s", f"**{name}'s**")
+        # Handle curly apostrophe: name’s  
+        text = text.replace(f"{name}’s", f"**{name}'s**")
     
     # Then handle regular names
     for name in CHARACTER_INFO:
