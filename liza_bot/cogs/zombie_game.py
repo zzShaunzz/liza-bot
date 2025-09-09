@@ -41,7 +41,102 @@ SPEED_SETTINGS = {
 
 # --- Character Data ---
 CHARACTER_INFO = {
-    # ... (your existing character data)
+    "Shaun Sadsarin": {
+        "age": 15, "gender": "Male",
+        "traits": ["empathetic", "stubborn", "agile", "semi-reserved", "improviser"],
+        "siblings": ["Addison Sadsarin"],
+        "likely_pairs": ["Addison Sadsarin", "Aiden Muy", "Gabe Muy", "Dylan Pastorin"],
+        "likely_conflicts": ["Jordan"],
+        "emoji": "hawhar"
+    },
+    "Addison Sadsarin": {
+        "age": 16, "gender": "Female",
+        "traits": ["kind", "patient", "responsible", "lacks physicality", "semi-obstinate"],
+        "siblings": ["Shaun Sadsarin"],
+        "likely_pairs": ["Kate Nainggolan", "Jill Nainggolan", "Shaun Sadsarin", "Vivian Muy"],
+        "likely_conflicts": ["Dylan Pastorin"],
+        "emoji": "feeling_silly"
+    },
+    "Dylan Pastorin": {
+        "age": 21, "gender": "Male",
+        "traits": ["confident", "wannabe-gunner", "brash", "slow", "semi-manipulable", "extrovert"],
+        "siblings": [],
+        "likely_pairs": ["Noah Nainggolan", "Gabe Muy", "Shaun Sadsarin", "Vivian Muy"],
+        "likely_conflicts": ["Kate Nainggolan"],
+        "emoji": "approved"
+    },
+    "Noah Nainggolan": {
+        "age": 18, "gender": "Male",
+        "traits": ["spontaneous", "weeaboo", "semi-aloof", "brawler"],
+        "siblings": ["Kate Nainggolan", "Jill Nainggolan"],
+        "likely_pairs": ["Gabe Muy", "Jill Nainggolan", "Kate Nainggolan", "Dylan Pastorin"],
+        "likely_conflicts": ["Jill Nainggolan"],
+        "emoji": "sillynoah"
+    },
+    "Jill Nainggolan": {
+        "age": 16, "gender": "Female",
+        "traits": ["conniving", "demure", "mellow", "likes cookies"],
+        "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
+        "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
+        "likely_conflicts": ["Noah Nainggolan"],
+        "emoji": "que"
+    },
+    "Kate Nainggolan": {
+        "age": 14, "gender": "Female",
+        "traits": ["cheeky", "manipulative", "bold", "persuasive"],
+        "siblings": ["Jill Nainggolan", "Noah Nainggolan"],
+        "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
+        "likely_conflicts": ["Aiden Muy"],
+        "emoji": "sigma"
+    },
+    "Vivian Muy": {
+        "age": 18, "gender": "Female",
+        "traits": ["wise", "calm", "insightful", "secret genius"],
+        "siblings": ["Gabe Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Dylan Pastorin", "Ella Muy", "Aiden Muy", "Addison Sadsarin"],
+        "likely_conflicts": ["Gabe Muy"],
+        "emoji": "leshame"
+    },
+    "Gabe Muy": {
+        "age": 17, "gender": "Male",
+        "traits": ["wrestler", "peacekeeper", "humorous", "light-weight"],
+        "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
+        "likely_conflicts": ["Addison Sadsarin"],
+        "emoji": "zesty"
+    },
+    "Aiden Muy": {
+        "age": 14, "gender": "Male",
+        "traits": ["crafty", "short", "observant", "chef"],
+        "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
+        "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
+        "likely_conflicts": ["Ella Muy"],
+        "emoji": "aidun"
+    },
+    "Ella Muy": {
+        "age": 11, "gender": "Female",
+        "traits": ["physically reliant", "luckiest"],
+        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"],
+        "likely_pairs": ["Addison Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
+        "likely_conflicts": ["Shaun Sadsarin"],
+        "emoji": "ellasigma"
+    },
+    "Nico Muy": {
+        "age": 12, "gender": "Male",
+        "traits": ["daring", "comical", "risk-taker", "needs guidance"],
+        "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"],
+        "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
+        "likely_conflicts": ["Vivian Muy"],
+        "emoji": "sips_milk"
+    },
+    "Jordan": {
+        "age": 13, "gender": "Male",
+        "traits": ["easy-going", "quietly skilled", "funny"],
+        "siblings": [],
+        "likely_pairs": ["Nico Muy", "Gabe Muy", "Aiden Muy", "Dylan Pastorin"],
+        "likely_conflicts": ["Dylan Pastorin"],
+        "emoji": "agua"
+    }
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
 
@@ -204,10 +299,10 @@ async def send_openrouter_request(payload):
     raise RuntimeError("All OpenRouter keys exhausted or invalid.")
 
 async def generate_ai_text(messages, temperature=0.8):
-    if active_game and active_game.terminated:
-        return None
     if not OPENROUTER_API_KEYS:
         return "[ERROR: No AI keys available. Cannot continue the game.]"
+    if active_game and active_game.terminated:
+        return None
     payload = {"model": MODEL, "messages": messages, "temperature": temperature}
     try:
         response = await send_openrouter_request(payload)
@@ -293,6 +388,8 @@ def enforce_bullets(text: str) -> list:
 
 # --- AI Prompts ---
 def build_scene_prompt():
+    if not active_game:
+        return ""
     g = active_game
     traits = "\n".join([
         f"{bold_name(n)}: {', '.join(CHARACTER_INFO.get(n.strip(), {}).get('traits', ['Unknown']))}"
@@ -318,6 +415,8 @@ def build_scene_prompt():
     )
 
 def build_health_prompt():
+    if not active_game:
+        return ""
     g = active_game
     alive_characters = ', '.join([f"{name.split()[0]} ({name})" for name in g.alive])
     return (
@@ -332,6 +431,8 @@ def build_health_prompt():
     )
 
 def build_scene_summary_prompt(scene_text):
+    if not active_game:
+        return ""
     return (
         f"{active_game.story_context}\n"
         f"Scene:\n{scene_text}\n\n"
@@ -411,30 +512,39 @@ class ZombieGame(commands.Cog):
         speed_2x = discord.ui.Button(label="2.0x (Very Fast)", style=discord.ButtonStyle.secondary)
 
         async def speed_1x_callback(interaction):
-            global current_speed
+            global current_speed, active_game
             current_speed = 1.0
             await interaction.response.edit_message(content="⚡ Game speed set to 1.0x (Normal). Starting game...", view=None)
-            await start_game_async(interaction.user.id, game_mode, speed=1.0)
+            success = await start_game_async(interaction.user.id, game_mode, speed=1.0)
+            if not success:
+                await interaction.followup.send("❌ Failed to start the game. Please try again.", ephemeral=True)
+                return
             msg = await interaction.channel.send("🧟‍♀️ Game starting in...")
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
 
         async def speed_15x_callback(interaction):
-            global current_speed
+            global current_speed, active_game
             current_speed = 1.5
             await interaction.response.edit_message(content="⚡ Game speed set to 1.5x (Fast). Starting game...", view=None)
-            await start_game_async(interaction.user.id, game_mode, speed=1.5)
+            success = await start_game_async(interaction.user.id, game_mode, speed=1.5)
+            if not success:
+                await interaction.followup.send("❌ Failed to start the game. Please try again.", ephemeral=True)
+                return
             msg = await interaction.channel.send("🧟‍♀️ Game starting in...")
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
 
         async def speed_2x_callback(interaction):
-            global current_speed
+            global current_speed, active_game
             current_speed = 2.0
             await interaction.response.edit_message(content="⚡ Game speed set to 2.0x (Very Fast). Starting game...", view=None)
-            await start_game_async(interaction.user.id, game_mode, speed=2.0)
+            success = await start_game_async(interaction.user.id, game_mode, speed=2.0)
+            if not success:
+                await interaction.followup.send("❌ Failed to start the game. Please try again.", ephemeral=True)
+                return
             msg = await interaction.channel.send("🧟‍♀️ Game starting in...")
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
@@ -504,6 +614,7 @@ class ZombieGame(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     async def run_round(self, channel: discord.TextChannel):
+        global active_game
         if not active_game or active_game.terminated:
             await channel.send("🛑 Game has been terminated.")
             return
@@ -816,6 +927,8 @@ class ZombieGame(commands.Cog):
 
 # --- Utilities ---
 async def generate_scene(g):
+    if not active_game:
+        return "[ERROR: No active game.]"
     raw_scene = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator generating cinematic zombie survival scenes."},
         {"role": "user", "content": build_scene_prompt()}
@@ -827,6 +940,8 @@ async def generate_scene(g):
     return raw_scene
 
 async def generate_scene_summary(scene_text, g):
+    if not active_game:
+        return "[ERROR: No active game.]"
     raw_summary = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator summarizing a zombie survival scene."},
         {"role": "user", "content": build_scene_summary_prompt(scene_text)}
@@ -836,6 +951,8 @@ async def generate_scene_summary(scene_text, g):
     return raw_summary
 
 async def generate_health_report(g):
+    if not active_game:
+        return "[ERROR: No active game.]"
     raw_health = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator generating a health report."},
         {"role": "user", "content": build_health_prompt()}
@@ -846,6 +963,8 @@ async def generate_health_report(g):
     return raw_health
 
 async def generate_dilemma(scene_text, health_text, g):
+    if not active_game:
+        return "[ERROR: No active game.]"
     raw_dilemma = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator generating dilemmas for a survival game."},
         {"role": "user", "content": (
@@ -863,6 +982,8 @@ async def generate_dilemma(scene_text, health_text, g):
     return raw_dilemma
 
 async def generate_choices(dilemma_text):
+    if not active_game:
+        return "[ERROR: No active game.]"
     raw_choices = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator generating voting choices."},
         {"role": "user", "content": (
@@ -877,6 +998,8 @@ async def generate_choices(dilemma_text):
     return raw_choices
 
 async def generate_full_recap(g):
+    if not active_game:
+        return "[ERROR: No active game.]"
     raw_recap = await generate_ai_text([
         {"role": "system", "content": "You are a horror narrator creating a cinematic recap of an entire zombie survival story."},
         {"role": "user", "content": (
@@ -892,7 +1015,7 @@ async def generate_full_recap(g):
     return raw_recap
 
 def auto_track_deaths(raw_scene: str, g):
-    if not raw_scene or "[ERROR:" in raw_scene:
+    if not raw_scene or "[ERROR:" in raw_scene or not active_game:
         return
     bullets = raw_scene.split("•")[1:]
     for bullet in bullets:
@@ -910,7 +1033,7 @@ def auto_track_deaths(raw_scene: str, g):
                         print(f"☠️ {name} marked dead based on bullet: {bullet.strip()}")
 
 def auto_track_stats(text: str, g):
-    if not text or "[ERROR:" in text:
+    if not text or "[ERROR:" in text or not active_game:
         return
     for name in CHARACTER_INFO:
         if re.search(rf"{name}.*(help|assist|protect|save|heal|aid|support)", text, re.IGNORECASE):
@@ -923,7 +1046,7 @@ def auto_track_stats(text: str, g):
             g.stats["dignified"][name] += 1
 
 def auto_track_relationships(text: str, g):
-    if not text or "[ERROR:" in text:
+    if not text or "[ERROR:" in text or not active_game:
         return
     for name1 in g.alive:
         for name2 in g.alive:
@@ -991,6 +1114,8 @@ async def start_game_async(user_id: int, game_mode: str = "player", resume=False
     return True
 
 async def generate_unique_setting():
+    if not OPENROUTER_API_KEYS:
+        return "Abandoned high school during a zombie outbreak."
     messages = [
         {"role": "system", "content": "You are a horror storyteller."},
         {"role": "user", "content": "🎬 Generate a unique setting for a zombie survival story. Be vivid, eerie, and specific. Avoid generic locations. Describe the environment in one sentence."}
