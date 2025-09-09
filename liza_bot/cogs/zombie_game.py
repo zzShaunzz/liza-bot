@@ -10,17 +10,18 @@ import sqlite3
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from discord.ext import commands
-from discord import Interaction, app_commands
+from discord import Interaction, app_commands, Embed
 from collections import defaultdict
 
 # --- Constants ---
-VERSION = "2.4.0"
+VERSION = "2.4.1"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("zombie_game")
 load_dotenv()
 
-# --- Game Configuration ---
+# --- Environment Variables ---
 ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
+ZOMBIE_LOG_CHANNEL_ID = int(os.getenv("ZOMBIE_LOG_CHANNEL_ID", "0"))
 MODEL = os.getenv("MODEL")
 OPENROUTER_API_KEYS = [key for key in [
     os.getenv("OPENROUTER_API_KEY_1"),
@@ -47,96 +48,84 @@ CHARACTER_INFO = {
         "traits": ["empathetic", "stubborn", "agile", "semi-reserved", "improviser"],
         "siblings": ["Addison Sadsarin"],
         "likely_pairs": ["Addison Sadsarin", "Aiden Muy", "Gabe Muy", "Dylan Pastorin"],
-        "likely_conflicts": ["Jordan"],
-        "emoji": "hawhar"
+        "likely_conflicts": ["Jordan"]
     },
     "Addison Sadsarin": {
         "age": 16, "gender": "Female",
         "traits": ["kind", "patient", "responsible", "lacks physicality", "semi-obstinate"],
         "siblings": ["Shaun Sadsarin"],
         "likely_pairs": ["Kate Nainggolan", "Jill Nainggolan", "Shaun Sadsarin", "Vivian Muy"],
-        "likely_conflicts": ["Dylan Pastorin"],
-        "emoji": "feeling_silly"
+        "likely_conflicts": ["Dylan Pastorin"]
     },
     "Dylan Pastorin": {
         "age": 21, "gender": "Male",
         "traits": ["confident", "wannabe-gunner", "brash", "slow", "semi-manipulable", "extrovert"],
         "siblings": [],
         "likely_pairs": ["Noah Nainggolan", "Gabe Muy", "Shaun Sadsarin", "Vivian Muy"],
-        "likely_conflicts": ["Kate Nainggolan"],
-        "emoji": "approved"
+        "likely_conflicts": ["Kate Nainggolan"]
     },
     "Noah Nainggolan": {
         "age": 18, "gender": "Male",
         "traits": ["spontaneous", "weeaboo", "semi-aloof", "brawler"],
         "siblings": ["Kate Nainggolan", "Jill Nainggolan"],
         "likely_pairs": ["Gabe Muy", "Jill Nainggolan", "Kate Nainggolan", "Dylan Pastorin"],
-        "likely_conflicts": ["Jill Nainggolan"],
-        "emoji": "sillynoah"
+        "likely_conflicts": ["Jill Nainggolan"]
     },
     "Jill Nainggolan": {
         "age": 16, "gender": "Female",
-        "traits": ["conniving", "demure", "mellow", "likes cookies"],
+        "traits": ["conniving", "demure", "mellow", "swimmer"],
         "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
-        "likely_conflicts": ["Noah Nainggolan"],
-        "emoji": "que"
+        "likely_conflicts": ["Noah Nainggolan"]
     },
     "Kate Nainggolan": {
         "age": 14, "gender": "Female",
         "traits": ["cheeky", "manipulative", "bold", "persuasive"],
         "siblings": ["Jill Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
-        "likely_conflicts": ["Aiden Muy"],
-        "emoji": "sigma"
+        "likely_conflicts": ["Aiden Muy"]
     },
     "Vivian Muy": {
         "age": 18, "gender": "Female",
         "traits": ["wise", "calm", "insightful", "secret genius"],
         "siblings": ["Gabe Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Dylan Pastorin", "Ella Muy", "Aiden Muy", "Addison Sadsarin"],
-        "likely_conflicts": ["Gabe Muy"],
-        "emoji": "leshame"
+        "likely_conflicts": ["Gabe Muy"]
     },
     "Gabe Muy": {
         "age": 17, "gender": "Male",
-        "traits": ["wrestler", "peacekeeper", "humorous", "light-weight"],
+        "traits": ["wrestler", "peacekeeper", "withdraws under pressure", "light-weight"],
         "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
-        "likely_conflicts": ["Addison Sadsarin"],
-        "emoji": "zesty"
+        "likely_conflicts": ["Addison Sadsarin"]
     },
     "Aiden Muy": {
         "age": 14, "gender": "Male",
         "traits": ["crafty", "short", "observant", "chef"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
-        "likely_conflicts": ["Ella Muy"],
-        "emoji": "aidun"
+        "likely_conflicts": ["Ella Muy"]
     },
     "Ella Muy": {
         "age": 11, "gender": "Female",
         "traits": ["physically reliant", "luckiest"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"],
         "likely_pairs": ["Addison Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
-        "likely_conflicts": ["Shaun Sadsarin"],
-        "emoji": "ellasigma"
+        "likely_conflicts": ["Shaun Sadsarin"]
     },
     "Nico Muy": {
         "age": 12, "gender": "Male",
         "traits": ["daring", "comical", "risk-taker", "needs guidance"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"],
         "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
-        "likely_conflicts": ["Vivian Muy"],
-        "emoji": "sips_milk"
+        "likely_conflicts": ["Vivian Muy"]
     },
     "Jordan": {
         "age": 13, "gender": "Male",
         "traits": ["easy-going", "quietly skilled", "funny"],
         "siblings": [],
         "likely_pairs": ["Nico Muy", "Gabe Muy", "Aiden Muy", "Dylan Pastorin"],
-        "likely_conflicts": ["Dylan Pastorin"],
-        "emoji": "agua"
+        "likely_conflicts": ["Dylan Pastorin"]
     }
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
@@ -167,6 +156,19 @@ class GameState:
         self.game_speed = 1.0
         self.game_mode = game_mode
         self.save_file = f"zombie_game_{initiator}.json"
+        self.game_number = self._get_next_game_number()
+
+    def _get_next_game_number(self):
+        try:
+            conn = sqlite3.connect('zombie_leaderboard.db')
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM games")
+            count = c.fetchone()[0]
+            conn.close()
+            return count + 1
+        except Exception as e:
+            logger.error(f"Error getting game number: {e}")
+            return 1
 
     def save(self):
         data = {
@@ -183,7 +185,8 @@ class GameState:
             "story_context": self.story_context,
             "round_number": self.round_number,
             "game_speed": self.game_speed,
-            "game_mode": self.game_mode
+            "game_mode": self.game_mode,
+            "game_number": self.game_number
         }
         with open(self.save_file, 'w') as f:
             json.dump(data, f, indent=2)
@@ -208,6 +211,7 @@ class GameState:
         game.story_context = data["story_context"]
         game.round_number = data["round_number"]
         game.game_speed = data.get("game_speed", 1.0)
+        game.game_number = data.get("game_number", 1)
         return game
 
     def delete_save(self):
@@ -218,7 +222,8 @@ class GameState:
         try:
             conn = sqlite3.connect('zombie_leaderboard.db')
             c = conn.cursor()
-            c.execute("INSERT INTO games (initiator, winner) VALUES (?, ?)", (self.initiator, winner))
+            c.execute("INSERT INTO games (initiator, winner, game_number) VALUES (?, ?, ?)",
+                      (self.initiator, winner, self.game_number))
             game_id = c.lastrowid
             for char in CHARACTERS:
                 survived = char in self.alive
@@ -245,6 +250,25 @@ class GameState:
         except Exception as e:
             logger.error(f"Error saving to leaderboard: {e}")
 
+    def log_game_to_channel(self, channel_id, first_message_url):
+        try:
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                logger.error(f"Log channel {channel_id} not found.")
+                return
+            embed = Embed(
+                title=f"🧟 Zombie Game #{self.game_number} Summary",
+                description=f"**Setting:** {self.story_seed}\n"
+                            f"**Winner:** {self.alive[0] if len(self.alive) == 1 else 'None'}\n"
+                            f"**Survivors:** {', '.join(self.alive) if self.alive else 'None'}\n"
+                            f"**Deaths:** {', '.join(self.dead) if self.dead else 'None'}",
+                color=0xFF0000,
+                url=first_message_url
+            )
+            channel.send(embed=embed)
+        except Exception as e:
+            logger.error(f"Error logging game: {e}")
+
 # --- Database Setup ---
 def init_db():
     conn = sqlite3.connect('zombie_leaderboard.db')
@@ -253,6 +277,7 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   initiator INTEGER,
                   winner TEXT,
+                  game_number INTEGER,
                   completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     c.execute('''CREATE TABLE IF NOT EXISTS character_stats
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -462,18 +487,15 @@ class ZombieGame(commands.Cog):
             view = discord.ui.View()
             continue_btn = discord.ui.Button(label="Continue", style=discord.ButtonStyle.green)
             new_btn = discord.ui.Button(label="New Game", style=discord.ButtonStyle.red)
-
             async def continue_callback(interaction):
                 global active_game, current_speed
                 active_game = existing_game
                 current_speed = active_game.game_speed
                 await interaction.response.edit_message(content="🔄 Continuing previous game...", view=None)
                 await self.run_round(interaction.channel)
-
             async def new_callback(interaction):
                 await interaction.response.edit_message(content="🔄 Starting new game...", view=None)
                 await self.ask_game_mode_slash(interaction)
-
             continue_btn.callback = continue_callback
             new_btn.callback = new_callback
             view.add_item(continue_btn)
@@ -486,15 +508,12 @@ class ZombieGame(commands.Cog):
         view = discord.ui.View()
         player_btn = discord.ui.Button(label="Player Game", style=discord.ButtonStyle.blurple, emoji="👤")
         auto_btn = discord.ui.Button(label="Auto Game", style=discord.ButtonStyle.green, emoji="🤖")
-
         async def player_callback(interaction):
             await interaction.response.edit_message(content="🔄 Starting player game...", view=None)
             await self.ask_game_speed(interaction, "player")
-
         async def auto_callback(interaction):
             await interaction.response.edit_message(content="🔄 Starting auto game...", view=None)
             await self.ask_game_speed(interaction, "auto")
-
         player_btn.callback = player_callback
         auto_btn.callback = auto_callback
         view.add_item(player_btn)
@@ -507,7 +526,6 @@ class ZombieGame(commands.Cog):
         speed_15x = discord.ui.Button(label="1.5x (Fast)", style=discord.ButtonStyle.secondary)
         speed_2x = discord.ui.Button(label="2.0x (Very Fast)", style=discord.ButtonStyle.secondary)
         speed_3x = discord.ui.Button(label="3.0x (Extreme)", style=discord.ButtonStyle.danger)
-
         async def speed_1x_callback(interaction):
             global current_speed, active_game
             current_speed = 1.0
@@ -520,7 +538,6 @@ class ZombieGame(commands.Cog):
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
-
         async def speed_15x_callback(interaction):
             global current_speed, active_game
             current_speed = 1.5
@@ -533,7 +550,6 @@ class ZombieGame(commands.Cog):
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
-
         async def speed_2x_callback(interaction):
             global current_speed, active_game
             current_speed = 2.0
@@ -546,7 +562,6 @@ class ZombieGame(commands.Cog):
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
-
         async def speed_3x_callback(interaction):
             global current_speed, active_game
             current_speed = 3.0
@@ -559,7 +574,6 @@ class ZombieGame(commands.Cog):
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
-
         speed_1x.callback = speed_1x_callback
         speed_15x.callback = speed_15x_callback
         speed_2x.callback = speed_2x_callback
@@ -610,7 +624,7 @@ class ZombieGame(commands.Cog):
         if not stats:
             await interaction.followup.send("❌ No leaderboard data available yet.")
             return
-        embed = discord.Embed(
+        embed = Embed(
             title="🧟 Zombie Survival Leaderboard",
             description="Statistics from all completed games",
             color=0x00ff00
@@ -915,57 +929,46 @@ class ZombieGame(commands.Cog):
             deaths_block = ["• None"]
         await channel.send("━━━━━━━━━━━━━━\n🪦 **Deaths (most recent first)**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, deaths_block, "stats")
-
         # --- Final Stats ---
         most_helpful = sorted(g.stats.get("helped", {}).items(), key=lambda x: x[1], reverse=True)[:3]
         most_sinister = sorted(g.stats.get("sinister", {}).items(), key=lambda x: x[1], reverse=True)[:3]
         most_resourceful = sorted(g.stats.get("resourceful", {}).items(), key=lambda x: x[1], reverse=True)[:3]
         most_dignified = sorted(g.stats.get("dignified", {}).items(), key=lambda x: x[1], reverse=True)[:3]
-
         bonds = sorted(g.stats.get("bonds", {}).items(), key=lambda x: x[1], reverse=True)[:3]
         conflicts = sorted(g.stats.get("conflicts", {}).items(), key=lambda x: x[1], reverse=True)[:3]
-
         final_stats = []
-
         if most_helpful:
             helpful_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_helpful])
             final_stats.append(f"━━━━━━━━━━━━━━\n🏅 **Most Helpful**\n━━━━━━━━━━━━━━\n{helpful_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n🏅 **Most Helpful**: None\n━━━━━━━━━━━━━━")
-
         if most_sinister:
             sinister_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_sinister])
             final_stats.append(f"━━━━━━━━━━━━━━\n😈 **Most Sinister**\n━━━━━━━━━━━━━━\n{sinister_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n😈 **Most Sinister**: None\n━━━━━━━━━━━━━━")
-
         if most_resourceful:
             resourceful_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_resourceful])
             final_stats.append(f"━━━━━━━━━━━━━━\n🔧 **Most Resourceful**\n━━━━━━━━━━━━━━\n{resourceful_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n🔧 **Most Resourceful**: None\n━━━━━━━━━━━━━━")
-
         if most_dignified:
             dignified_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_dignified])
             final_stats.append(f"━━━━━━━━━━━━━━\n🕊️ **Most Dignified**\n━━━━━━━━━━━━━━\n{dignified_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n🕊️ **Most Dignified**: None\n━━━━━━━━━━━━━━")
-
         if bonds:
             bonds_text = "\n".join([f"• {bold_name(pair[0])} & {bold_name(pair[1])}: {count}" for (pair, count) in bonds])
             final_stats.append(f"━━━━━━━━━━━━━━\n🤝 **Strongest Bonds**\n━━━━━━━━━━━━━━\n{bonds_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n🤝 **Strongest Bonds**: None\n━━━━━━━━━━━━━━")
-
         if conflicts:
             conflicts_text = "\n".join([f"• {bold_name(pair[0])} vs {bold_name(pair[1])}: {count}" for (pair, count) in conflicts])
             final_stats.append(f"━━━━━━━━━━━━━━\n⚔️ **Biggest Conflicts**\n━━━━━━━━━━━━━━\n{conflicts_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n⚔️ **Biggest Conflicts**: None\n━━━━━━━━━━━━━━")
-
         for stat in final_stats:
             await channel.send(stat)
-
         if g.story_context:
             raw_recap = await generate_full_recap(g)
             if not raw_recap or "[ERROR:" in raw_recap:
@@ -976,7 +979,12 @@ class ZombieGame(commands.Cog):
                 await stream_bullets_in_message(channel, recap_bullets, "summary")
         else:
             await channel.send("📝 *Game ended before any story developed*")
-        await channel.send("🎬 Thanks for surviving (or not) the zombie apocalypse. Until next time...")
+        await channel.send(f"🎬 Thanks for surviving (or not) the zombie apocalypse in **Game #{g.game_number}**. Until next time...")
+
+        # --- Log Game ---
+        if ZOMBIE_LOG_CHANNEL_ID:
+            first_message = (await channel.history(limit=100).flatten())[-1]
+            g.log_game_to_channel(ZOMBIE_LOG_CHANNEL_ID, first_message.jump_url)
 
 # --- Utilities ---
 async def generate_scene(g):
