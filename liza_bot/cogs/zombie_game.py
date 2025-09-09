@@ -703,6 +703,15 @@ class ZombieGame(commands.Cog):
                     health_lines.append(f"🟢 {bold_name(name)} :{emoji_name}: : {default_status}")
         await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, health_lines, "health")
+        # --- Phase 2.5: Group Dynamics ---
+        raw_dynamics = await generate_group_dynamics(raw_scene, raw_health, g)
+        if not raw_dynamics or "[ERROR:" in raw_dynamics:
+            await channel.send(f"⚠️ {raw_dynamics or 'AI is not responding. Ending the game.'}")
+            end_game()
+            return
+        dynamics_bullets = enforce_bullets(raw_dynamics)
+        await channel.send("━━━━━━━━━━━━━━\n💬 **Group Dynamics**\n━━━━━━━━━━━━━━")
+        await stream_bullets_in_message(channel, dynamics_bullets, "dynamics")
         # --- Phase 3: Dilemma ---
         raw_dilemma = await generate_dilemma(raw_scene, raw_health, g)
         if not raw_dilemma or "[ERROR:" in raw_dilemma:
@@ -893,14 +902,19 @@ class ZombieGame(commands.Cog):
             deaths_block = ["• None"]
         await channel.send("🪦 **Deaths (most recent first)**")
         await stream_bullets_in_message(channel, deaths_block, "stats")
-        most_helpful = max(g.stats.get("helped", {}).items(), key=lambda x: x[1])[0] if g.stats.get("helped") else "None"
-        most_sinister = max(g.stats.get("sinister", {}).items(), key=lambda x: x[1])[0] if g.stats.get("sinister") else "None"
-        most_resourceful = max(g.stats.get("resourceful", {}).items(), key=lambda x: x[1])[0] if g.stats.get("resourceful") else "None"
-        most_dignified = max(g.stats.get("dignified", {}).items(), key=lambda x: x[1])[0] if g.stats.get("dignified") else "None"
+
+        # --- Final Stats ---
+        most_helpful = max(g.stats.get("helped", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("helped") else "None"
+        most_sinister = max(g.stats.get("sinister", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("sinister") else "None"
+        most_resourceful = max(g.stats.get("resourceful", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("resourceful") else "None"
+        most_dignified = max(g.stats.get("dignified", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("dignified") else "None"
+
         bonds = sorted(g.stats.get("bonds", {}).items(), key=lambda x: x[1], reverse=True)
         conflicts = sorted(g.stats.get("conflicts", {}).items(), key=lambda x: x[1], reverse=True)
+
         bond_pair = bonds[0][0] if bonds else ("None", "None")
         conflict_pair = conflicts[0][0] if conflicts else ("None", "None")
+
         final_stats = [
             f"🏅 Most helpful: {bold_name(most_helpful)}",
             f"😈 Most sinister: {bold_name(most_sinister)}",
@@ -909,9 +923,16 @@ class ZombieGame(commands.Cog):
             f"⚔️ Biggest conflict: {bold_name(conflict_pair[0])} vs {bold_name(conflict_pair[1])}",
             f"🕊️ Most dignified: {bold_name(most_dignified)}"
         ]
+
+        # Filter out "None" entries
         final_stats = [line for line in final_stats if "None" not in line]
+
+        if not final_stats:
+            final_stats = ["• No stats recorded."]
+
         await channel.send("━━━━━━━━━━━━━━\n📊 **Final Stats**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, final_stats, "stats")
+
         if g.story_context and g.last_choice:
             raw_recap = await generate_full_recap(g)
             if not raw_recap or "[ERROR:" in raw_recap:
@@ -961,6 +982,25 @@ async def generate_health_report(g):
         return raw_health
     auto_track_stats(raw_health, g)
     return raw_health
+
+async def generate_group_dynamics(scene_text, health_text, g):
+    if not active_game:
+        return "[ERROR: No active game.]"
+    raw_dynamics = await generate_ai_text([
+        {"role": "system", "content": "You are a horror narrator generating group dynamics for a survival game."},
+        {"role": "user", "content": (
+            f"{g.story_context}\n"
+            f"Scene:\n{scene_text}\n\n"
+            f"Health:\n{health_text}\n\n"
+            "🧠 Describe the group dynamics in 2-3 bullet points. "
+            "Focus on bonds, conflicts, and emotional shifts. "
+            "Format as bullet points using •. "
+            "Do not include choices or options. Only describe the group dynamics."
+        )}
+    ], temperature=0.9)
+    if not raw_dynamics or "[ERROR:" in raw_dynamics:
+        return raw_dynamics
+    return raw_dynamics
 
 async def generate_dilemma(scene_text, health_text, g):
     if not active_game:
