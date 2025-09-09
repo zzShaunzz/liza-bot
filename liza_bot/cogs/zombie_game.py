@@ -14,7 +14,7 @@ from discord import Interaction, app_commands, Embed
 from collections import defaultdict
 
 # --- Constants ---
-VERSION = "2.4.1"
+VERSION = "2.4.2"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("zombie_game")
 load_dotenv()
@@ -48,84 +48,96 @@ CHARACTER_INFO = {
         "traits": ["empathetic", "stubborn", "agile", "semi-reserved", "improviser"],
         "siblings": ["Addison Sadsarin"],
         "likely_pairs": ["Addison Sadsarin", "Aiden Muy", "Gabe Muy", "Dylan Pastorin"],
-        "likely_conflicts": ["Jordan"]
+        "likely_conflicts": ["Jordan"],
+        "emoji": "hawhar"
     },
     "Addison Sadsarin": {
         "age": 16, "gender": "Female",
         "traits": ["kind", "patient", "responsible", "lacks physicality", "semi-obstinate"],
         "siblings": ["Shaun Sadsarin"],
         "likely_pairs": ["Kate Nainggolan", "Jill Nainggolan", "Shaun Sadsarin", "Vivian Muy"],
-        "likely_conflicts": ["Dylan Pastorin"]
+        "likely_conflicts": ["Dylan Pastorin"],
+        "emoji": "feeling_silly"
     },
     "Dylan Pastorin": {
         "age": 21, "gender": "Male",
         "traits": ["confident", "wannabe-gunner", "brash", "slow", "semi-manipulable", "extrovert"],
         "siblings": [],
         "likely_pairs": ["Noah Nainggolan", "Gabe Muy", "Shaun Sadsarin", "Vivian Muy"],
-        "likely_conflicts": ["Kate Nainggolan"]
+        "likely_conflicts": ["Kate Nainggolan"],
+        "emoji": "approved"
     },
     "Noah Nainggolan": {
         "age": 18, "gender": "Male",
         "traits": ["spontaneous", "weeaboo", "semi-aloof", "brawler"],
         "siblings": ["Kate Nainggolan", "Jill Nainggolan"],
         "likely_pairs": ["Gabe Muy", "Jill Nainggolan", "Kate Nainggolan", "Dylan Pastorin"],
-        "likely_conflicts": ["Jill Nainggolan"]
+        "likely_conflicts": ["Jill Nainggolan"],
+        "emoji": "sillynoah"
     },
     "Jill Nainggolan": {
         "age": 16, "gender": "Female",
-        "traits": ["conniving", "demure", "mellow", "swimmer"],
+        "traits": ["conniving", "demure", "mellow", "likes cookies"],
         "siblings": ["Kate Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Kate Nainggolan", "Noah Nainggolan", "Addison Sadsarin", "Gabe Muy"],
-        "likely_conflicts": ["Noah Nainggolan"]
+        "likely_conflicts": ["Noah Nainggolan"],
+        "emoji": "que"
     },
     "Kate Nainggolan": {
         "age": 14, "gender": "Female",
         "traits": ["cheeky", "manipulative", "bold", "persuasive"],
         "siblings": ["Jill Nainggolan", "Noah Nainggolan"],
         "likely_pairs": ["Dylan Pastorin", "Gabe Muy", "Addison Sadsarin", "Shaun Sadsarin"],
-        "likely_conflicts": ["Aiden Muy"]
+        "likely_conflicts": ["Aiden Muy"],
+        "emoji": "sigma"
     },
     "Vivian Muy": {
         "age": 18, "gender": "Female",
         "traits": ["wise", "calm", "insightful", "secret genius"],
         "siblings": ["Gabe Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Dylan Pastorin", "Ella Muy", "Aiden Muy", "Addison Sadsarin"],
-        "likely_conflicts": ["Gabe Muy"]
+        "likely_conflicts": ["Gabe Muy"],
+        "emoji": "leshame"
     },
     "Gabe Muy": {
         "age": 17, "gender": "Male",
-        "traits": ["wrestler", "peacekeeper", "withdraws under pressure", "light-weight"],
+        "traits": ["wrestler", "peacekeeper", "humorous", "light-weight"],
         "siblings": ["Vivian Muy", "Aiden Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Aiden Muy", "Nico Muy", "Shaun Sadsarin", "Noah Nainggolan"],
-        "likely_conflicts": ["Addison Sadsarin"]
+        "likely_conflicts": ["Addison Sadsarin"],
+        "emoji": "zesty"
     },
     "Aiden Muy": {
         "age": 14, "gender": "Male",
         "traits": ["crafty", "short", "observant", "chef"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Ella Muy", "Nico Muy"],
         "likely_pairs": ["Shaun Sadsarin", "Jordan", "Nico Muy", "Addison Sadsarin"],
-        "likely_conflicts": ["Ella Muy"]
+        "likely_conflicts": ["Ella Muy"],
+        "emoji": "aidun"
     },
     "Ella Muy": {
         "age": 11, "gender": "Female",
         "traits": ["physically reliant", "luckiest"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Nico Muy"],
         "likely_pairs": ["Addison Sadsarin", "Jill Nainggolan", "Kate Nainggolan", "Vivian Muy"],
-        "likely_conflicts": ["Shaun Sadsarin"]
+        "likely_conflicts": ["Shaun Sadsarin"],
+        "emoji": "ellasigma"
     },
     "Nico Muy": {
         "age": 12, "gender": "Male",
         "traits": ["daring", "comical", "risk-taker", "needs guidance"],
         "siblings": ["Vivian Muy", "Gabe Muy", "Aiden Muy", "Ella Muy"],
         "likely_pairs": ["Jordan", "Aiden Muy", "Gabe Muy", "Shaun Sadsarin"],
-        "likely_conflicts": ["Vivian Muy"]
+        "likely_conflicts": ["Vivian Muy"],
+        "emoji": "sips_milk"
     },
     "Jordan": {
         "age": 13, "gender": "Male",
         "traits": ["easy-going", "quietly skilled", "funny"],
         "siblings": [],
         "likely_pairs": ["Nico Muy", "Gabe Muy", "Aiden Muy", "Dylan Pastorin"],
-        "likely_conflicts": ["Dylan Pastorin"]
+        "likely_conflicts": ["Dylan Pastorin"],
+        "emoji": "agua"
     }
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
@@ -711,23 +723,23 @@ class ZombieGame(commands.Cog):
                     icon = "🟡"
                 elif any(word in health_status.lower() for word in ['critical', 'dying', 'bleeding', 'unconscious', 'fever', 'submerged', 'unseen']):
                     icon = "🔴"
-                emoji_name = CHARACTER_INFO[matched_character]["emoji"]
-                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+                emoji_name = CHARACTER_INFO.get(matched_character, {}).get("emoji", "")
+                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
                 if emoji:
                     formatted_line = f"{icon} {bold_name(matched_character)} {emoji} : {health_status}"
                 else:
-                    formatted_line = f"{icon} {bold_name(matched_character)} :{emoji_name}: : {health_status}"
+                    formatted_line = f"{icon} {bold_name(matched_character)} :{emoji_name}: : {health_status}" if emoji_name else f"{icon} {bold_name(matched_character)} : {health_status}"
                 health_lines.append(formatted_line)
         # Add missing characters with default statuses
         for name in g.alive:
             if name not in processed_characters:
-                emoji_name = CHARACTER_INFO[name]["emoji"]
-                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+                emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
+                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
                 default_status = random.choice(["Stable", "Alert", "Tired"])
                 if emoji:
                     health_lines.append(f"🟢 {bold_name(name)} {emoji} : {default_status}")
                 else:
-                    health_lines.append(f"🟢 {bold_name(name)} :{emoji_name}: : {default_status}")
+                    health_lines.append(f"🟢 {bold_name(name)} :{emoji_name}: : {default_status}" if emoji_name else f"🟢 {bold_name(name)} : {default_status}")
         await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, health_lines, "health")
         # --- Phase 2.5: Group Dynamics ---
@@ -874,19 +886,19 @@ class ZombieGame(commands.Cog):
         formatted_survivors = []
         for name in g.alive:
             emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
-            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
             if emoji:
                 formatted_survivors.append(f"• {bold_name(name)} {emoji}")
             else:
-                formatted_survivors.append(f"• {bold_name(name)} :{emoji_name}:")
+                formatted_survivors.append(f"• {bold_name(name)} :{emoji_name}:" if emoji_name else f"• {bold_name(name)}")
         formatted_deaths = []
         for name in new_deaths:
             emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
-            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
             if emoji:
                 formatted_deaths.append(f"• {bold_name(name)} {emoji}")
             else:
-                formatted_deaths.append(f"• {bold_name(name)} :{emoji_name}:")
+                formatted_deaths.append(f"• {bold_name(name)} :{emoji_name}:" if emoji_name else f"• {bold_name(name)}")
         await channel.send("━━━━━━━━━━━━━━\n💀 **Deaths This Round**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, formatted_deaths, "stats")
         await channel.send("━━━━━━━━━━━━━━\n🧍 **Remaining Survivors**\n━━━━━━━━━━━━━━")
@@ -896,11 +908,11 @@ class ZombieGame(commands.Cog):
             if len(g.alive) == 1:
                 survivor = g.alive[0]
                 emoji_name = CHARACTER_INFO.get(survivor, {}).get("emoji", "")
-                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
                 if emoji:
                     await channel.send(f"🏆 {bold_name(survivor)} {emoji} is the sole survivor!")
                 else:
-                    await channel.send(f"🏆 {bold_name(survivor)} :{emoji_name}: is the sole survivor!")
+                    await channel.send(f"🏆 {bold_name(survivor)} :{emoji_name}: is the sole survivor!" if emoji_name else f"🏆 {bold_name(survivor)} is the sole survivor!")
                 g.save_to_leaderboard(winner=survivor)
             else:
                 await channel.send("💀 No survivors remain.")
@@ -920,11 +932,11 @@ class ZombieGame(commands.Cog):
         deaths_block = []
         for name in valid_deaths:
             emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
-            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
             if emoji:
                 deaths_block.append(f"• {bold_name(name)} {emoji}")
             else:
-                deaths_block.append(f"• {bold_name(name)} :{emoji_name}:")
+                deaths_block.append(f"• {bold_name(name)} :{emoji_name}:" if emoji_name else f"• {bold_name(name)}")
         if not deaths_block:
             deaths_block = ["• None"]
         await channel.send("━━━━━━━━━━━━━━\n🪦 **Deaths (most recent first)**\n━━━━━━━━━━━━━━")
