@@ -899,7 +899,7 @@ class ZombieGame(commands.Cog):
         ], temperature=0.3)
         new_deaths = []
         if death_analysis and "[ERROR:" not in death_analysis:
-            died_match = re.search(r"DIED:\s*(.+?)(?:\n|\$)", death_analysis, re.IGNORECASE)
+            died_match = re.search(r"DIED:\s*(.+?)(?:\n|$)", death_analysis, re.IGNORECASE)
             if died_match:
                 deaths_text = died_match.group(1).strip()
                 if deaths_text.lower() != "none":
@@ -1186,7 +1186,7 @@ async def generate_choices(dilemma_text):
             "Format each as a numbered bullet starting with '1.' and '2.'"
         )}
     ], temperature=0.8)
-    if not raw_choices or "[ERROR:" in raw_choices]:
+    if not raw_choices or "[ERROR:" in raw_choices:
         return raw_choices
     return raw_choices
 
