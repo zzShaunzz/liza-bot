@@ -14,7 +14,7 @@ from discord import Interaction, app_commands, ui
 from collections import defaultdict
 
 # --- Constants ---
-VERSION = "2.6.0"
+VERSION = "2.7.0"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("zombie_game")
 load_dotenv()
@@ -141,6 +141,39 @@ CHARACTER_INFO = {
     }
 }
 CHARACTERS = list(CHARACTER_INFO.keys())
+
+# --- Death Log Navigation View ---
+class DeathLogView(ui.View):
+    def __init__(self, embeds):
+        super().__init__(timeout=300.0)
+        self.embeds = embeds
+        self.current_page = 0
+
+        # Create buttons
+        self.left_button = ui.Button(emoji="⬅", style=discord.ButtonStyle.secondary)
+        self.right_button = ui.Button(emoji="➡", style=discord.ButtonStyle.secondary)
+
+        # Set callbacks
+        self.left_button.callback = self.left_callback
+        self.right_button.callback = self.right_callback
+
+        # Add buttons to view
+        self.add_item(self.left_button)
+        self.add_item(self.right_button)
+
+    async def left_callback(self, interaction: Interaction):
+        if self.current_page > 0:
+            self.current_page -= 1
+            await interaction.response.edit_message(embed=self.embeds[self.current_page], view=self)
+        else:
+            await interaction.response.defer()
+
+    async def right_callback(self, interaction: Interaction):
+        if self.current_page < len(self.embeds) - 1:
+            self.current_page += 1
+            await interaction.response.edit_message(embed=self.embeds[self.current_page], view=self)
+        else:
+            await interaction.response.defer()
 
 # --- Game State ---
 class GameState:
@@ -390,6 +423,31 @@ def enforce_bullets(text: str) -> list:
         bullets.append(f"• {bold_character_names(current.strip())}")
     return bullets
 
+def format_stat_section(title: str, name: str, channel: discord.TextChannel) -> str:
+    if name == "None":
+        return f"━━━━━━━━━━━━━━\n{title}\n━━━━━━━━━━━━━━\n• None"
+    else:
+        emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
+        emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+        if emoji:
+            return f"━━━━━━━━━━━━━━\n{title}\n━━━━━━━━━━━━━━\n• {bold_name(name)} {emoji}"
+        else:
+            return f"━━━━━━━━━━━━━━\n{title}\n━━━━━━━━━━━━━━\n• {bold_name(name)} :{emoji_name}:"
+
+def format_bond_conflict(title: str, pair: tuple, channel: discord.TextChannel) -> str:
+    if pair[0] == "None":
+        return f"━━━━━━━━━━━━━━\n{title}\n━━━━━━━━━━━━━━\n• None"
+    else:
+        char1, char2 = pair
+        emoji1 = CHARACTER_INFO.get(char1, {}).get("emoji", "")
+        emoji2 = CHARACTER_INFO.get(char2, {}).get("emoji", "")
+        e1 = discord.utils.get(channel.guild.emojis, name=emoji1)
+        e2 = discord.utils.get(channel.guild.emojis, name=emoji2)
+        if e1 and e2:
+            return f"━━━━━━━━━━━━━━\n{title}\n━━━━━━━━━━━━━━\n• {bold_name(char1)} {e1} & {bold_name(char2)} {e2}"
+        else:
+            return f"━━━━━━━━━━━━━━\n{title}\n━━━━━━━━━━━━━━\n• {bold_name(char1)} :{emoji1}: & {bold_name(char2)} :{emoji2}:"
+
 # --- AI Prompts ---
 def build_scene_prompt():
     if not active_game:
@@ -441,7 +499,7 @@ def build_scene_summary_prompt(scene_text):
     return (
         f"{active_game.story_context}\n"
         f"Scene:\n{scene_text}\n\n"
-        "🧠 Summarize the key events in **one direct sentence**"
+        "🧠 Summarize the key events in **one direct sentence** without adding a period at the end"
     )
 
 # --- Game Commands ---
@@ -471,18 +529,15 @@ class ZombieGame(commands.Cog):
             view = discord.ui.View()
             continue_btn = discord.ui.Button(label="Continue", style=discord.ButtonStyle.green)
             new_btn = discord.ui.Button(label="New Game", style=discord.ButtonStyle.red)
-
             async def continue_callback(interaction):
                 global active_game, current_speed
                 active_game = existing_game
                 current_speed = active_game.game_speed
                 await interaction.response.edit_message(content="🔄 Continuing previous game...", view=None)
                 await self.run_round(interaction.channel)
-
             async def new_callback(interaction):
                 await interaction.response.edit_message(content="🔄 Starting new game...", view=None)
                 await self.ask_game_mode_slash(interaction)
-
             continue_btn.callback = continue_callback
             new_btn.callback = new_callback
             view.add_item(continue_btn)
@@ -495,15 +550,12 @@ class ZombieGame(commands.Cog):
         view = discord.ui.View()
         player_btn = discord.ui.Button(label="Player Game", style=discord.ButtonStyle.blurple, emoji="👤")
         auto_btn = discord.ui.Button(label="Auto Game", style=discord.ButtonStyle.green, emoji="🤖")
-
         async def player_callback(interaction):
             await interaction.response.edit_message(content="🔄 Starting player game...", view=None)
             await self.ask_game_speed(interaction, "player")
-
         async def auto_callback(interaction):
             await interaction.response.edit_message(content="🔄 Starting auto game...", view=None)
             await self.ask_game_speed(interaction, "auto")
-
         player_btn.callback = player_callback
         auto_btn.callback = auto_callback
         view.add_item(player_btn)
@@ -516,7 +568,6 @@ class ZombieGame(commands.Cog):
         speed_15x = discord.ui.Button(label="1.5x (Fast)", style=discord.ButtonStyle.secondary)
         speed_2x = discord.ui.Button(label="2.0x (Very Fast)", style=discord.ButtonStyle.secondary)
         speed_3x = discord.ui.Button(label="3.0x (Extreme)", style=discord.ButtonStyle.danger)
-
         async def speed_1x_callback(interaction):
             global current_speed, active_game, game_counter
             current_speed = 1.0
@@ -531,7 +582,6 @@ class ZombieGame(commands.Cog):
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
-
         async def speed_15x_callback(interaction):
             global current_speed, active_game, game_counter
             current_speed = 1.5
@@ -546,7 +596,6 @@ class ZombieGame(commands.Cog):
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
-
         async def speed_2x_callback(interaction):
             global current_speed, active_game, game_counter
             current_speed = 2.0
@@ -561,7 +610,6 @@ class ZombieGame(commands.Cog):
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
-
         async def speed_3x_callback(interaction):
             global current_speed, active_game, game_counter
             current_speed = 3.0
@@ -576,7 +624,6 @@ class ZombieGame(commands.Cog):
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
-
         speed_1x.callback = speed_1x_callback
         speed_15x.callback = speed_15x_callback
         speed_2x.callback = speed_2x_callback
@@ -667,7 +714,7 @@ class ZombieGame(commands.Cog):
             await channel.send(f"⚠️ {raw_summary or 'AI is not responding. Ending the game.'}")
             end_game()
             return
-        scene_bullets.append(f"\n━━━━━━━━━━━━━━\n📝 **Scene Summary**")
+        scene_bullets.append(f"\n━━━━━━━━━━━━━━\n📝 **Scene Summary**\n━━━━━━━━━━━━━━")
         scene_bullets.append(f"• {bold_character_names(raw_summary)}")
         await channel.send(f"━━━━━━━━━━━━━━\n🎭 **Scene {g.round_number}**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, scene_bullets, "scene")
@@ -852,7 +899,7 @@ class ZombieGame(commands.Cog):
         ], temperature=0.3)
         new_deaths = []
         if death_analysis and "[ERROR:" not in death_analysis:
-            died_match = re.search(r"DIED:\s*(.+?)(?:\n|$)", death_analysis, re.IGNORECASE)
+            died_match = re.search(r"DIED:\s*(.+?)(?:\n|\$)", death_analysis, re.IGNORECASE)
             if died_match:
                 deaths_text = died_match.group(1).strip()
                 if deaths_text.lower() != "none":
@@ -940,7 +987,6 @@ class ZombieGame(commands.Cog):
 
         # --- Final Stats ---
         final_stats = []
-
         # Get top character for each stat
         most_helpful = max(g.stats.get("helped", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("helped") else "None"
         most_sinister = max(g.stats.get("sinister", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("sinister") else "None"
@@ -955,65 +1001,12 @@ class ZombieGame(commands.Cog):
         top_conflict = conflicts[0][0] if conflicts else ("None", "None")
 
         # Add stats to final_stats with proper formatting
-        if most_helpful != "None":
-            emoji_name = CHARACTER_INFO.get(most_helpful, {}).get("emoji", "")
-            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
-            if emoji:
-                final_stats.append(f"━━━━━━━━━━━━━━\n🏅 **Most Helpful**\n━━━━━━━━━━━━━━\n• {bold_name(most_helpful)} {emoji}")
-            else:
-                final_stats.append(f"━━━━━━━━━━━━━━\n🏅 **Most Helpful**\n━━━━━━━━━━━━━━\n• {bold_name(most_helpful)} :{emoji_name}:")
-        else:
-            final_stats.append("━━━━━━━━━━━━━━\n🏅 **Most Helpful**: None\n━━━━━━━━━━━━━━")
-
-        if most_sinister != "None":
-            emoji_name = CHARACTER_INFO.get(most_sinister, {}).get("emoji", "")
-            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
-            if emoji:
-                final_stats.append(f"━━━━━━━━━━━━━━\n😈 **Most Sinister**\n━━━━━━━━━━━━━━\n• {bold_name(most_sinister)} {emoji}")
-            else:
-                final_stats.append(f"━━━━━━━━━━━━━━\n😈 **Most Sinister**\n━━━━━━━━━━━━━━\n• {bold_name(most_sinister)} :{emoji_name}:")
-        else:
-            final_stats.append("━━━━━━━━━━━━━━\n😈 **Most Sinister**: None\n━━━━━━━━━━━━━━")
-
-        if most_resourceful != "None":
-            emoji_name = CHARACTER_INFO.get(most_resourceful, {}).get("emoji", "")
-            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
-            if emoji:
-                final_stats.append(f"━━━━━━━━━━━━━━\n🔧 **Most Resourceful**\n━━━━━━━━━━━━━━\n• {bold_name(most_resourceful)} {emoji}")
-            else:
-                final_stats.append(f"━━━━━━━━━━━━━━\n🔧 **Most Resourceful**\n━━━━━━━━━━━━━━\n• {bold_name(most_resourceful)} :{emoji_name}:")
-        else:
-            final_stats.append("━━━━━━━━━━━━━━\n🔧 **Most Resourceful**: None\n━━━━━━━━━━━━━━")
-
-        if most_dignified != "None":
-            emoji_name = CHARACTER_INFO.get(most_dignified, {}).get("emoji", "")
-            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
-            if emoji:
-                final_stats.append(f"━━━━━━━━━━━━━━\n🕊️ **Most Dignified**\n━━━━━━━━━━━━━━\n• {bold_name(most_dignified)} {emoji}")
-            else:
-                final_stats.append(f"━━━━━━━━━━━━━━\n🕊️ **Most Dignified**\n━━━━━━━━━━━━━━\n• {bold_name(most_dignified)} :{emoji_name}:")
-        else:
-            final_stats.append("━━━━━━━━━━━━━━\n🕊️ **Most Dignified**: None\n━━━━━━━━━━━━━━")
-
-        if top_bond[0] != "None":
-            emoji1 = discord.utils.get(channel.guild.emojis, name=CHARACTER_INFO.get(top_bond[0], {}).get("emoji", ""))
-            emoji2 = discord.utils.get(channel.guild.emojis, name=CHARACTER_INFO.get(top_bond[1], {}).get("emoji", ""))
-            if emoji1 and emoji2:
-                final_stats.append(f"━━━━━━━━━━━━━━\n🤝 **Strongest Bond**\n━━━━━━━━━━━━━━\n• {bold_name(top_bond[0])} {emoji1} & {bold_name(top_bond[1])} {emoji2}")
-            else:
-                final_stats.append(f"━━━━━━━━━━━━━━\n🤝 **Strongest Bond**\n━━━━━━━━━━━━━━\n• {bold_name(top_bond[0])} & {bold_name(top_bond[1])}")
-        else:
-            final_stats.append("━━━━━━━━━━━━━━\n🤝 **Strongest Bond**: None\n━━━━━━━━━━━━━━")
-
-        if top_conflict[0] != "None":
-            emoji1 = discord.utils.get(channel.guild.emojis, name=CHARACTER_INFO.get(top_conflict[0], {}).get("emoji", ""))
-            emoji2 = discord.utils.get(channel.guild.emojis, name=CHARACTER_INFO.get(top_conflict[1], {}).get("emoji", ""))
-            if emoji1 and emoji2:
-                final_stats.append(f"━━━━━━━━━━━━━━\n⚔️ **Biggest Conflict**\n━━━━━━━━━━━━━━\n• {bold_name(top_conflict[0])} {emoji1} vs {bold_name(top_conflict[1])} {emoji2}")
-            else:
-                final_stats.append(f"━━━━━━━━━━━━━━\n⚔️ **Biggest Conflict**\n━━━━━━━━━━━━━━\n• {bold_name(top_conflict[0])} vs {bold_name(top_conflict[1])}")
-        else:
-            final_stats.append("━━━━━━━━━━━━━━\n⚔️ **Biggest Conflict**: None\n━━━━━━━━━━━━━━")
+        final_stats.append(format_stat_section("🏅 **Most Helpful**", most_helpful, channel))
+        final_stats.append(format_stat_section("😈 **Most Sinister**", most_sinister, channel))
+        final_stats.append(format_stat_section("🔧 **Most Resourceful**", most_resourceful, channel))
+        final_stats.append(format_stat_section("🕊️ **Most Dignified**", most_dignified, channel))
+        final_stats.append(format_bond_conflict("🤝 **Strongest Bond**", top_bond, channel))
+        final_stats.append(format_bond_conflict("⚔️ **Biggest Conflict**", top_conflict, channel))
 
         for stat in final_stats:
             await channel.send(stat)
@@ -1044,51 +1037,29 @@ class ZombieGame(commands.Cog):
         winner = g.alive[0] if g.alive else "None"
         first_message_url = f"https://discord.com/channels/{channel.guild.id}/{channel.id}/{g.first_message_id}"
 
-        # Create death log embeds
-        death_embeds = []
-        current_embed = discord.Embed(
-            title=f"🧟 Game #{game_counter} Death Log",
-            description=f"**Setting:** {g.story_seed}\n**Winner:** {bold_name(winner) if winner != 'None' else 'None'}",
-            color=0xFF0000 if not g.alive else 0x00FF00
-        )
-
-        # Add death entries to embed
-        for i, (name, death_desc) in enumerate(g.death_log):
-            emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
-            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
-            if emoji:
-                death_entry = f"{i+1}. {bold_name(name)} {emoji} - {death_desc}"
-            else:
-                death_entry = f"{i+1}. {bold_name(name)} :{emoji_name}: - {death_desc}"
-
-            if len(current_embed.fields) >= 5:  # Max 5 fields per embed
-                death_embeds.append(current_embed)
-                current_embed = discord.Embed(color=0xFF0000 if not g.alive else 0x00FF00)
-
-            current_embed.add_field(name=f"Death #{i+1}", value=death_entry, inline=False)
-
-        if current_embed.fields:  # Add the last embed if it has fields
-            death_embeds.append(current_embed)
-
         # Create main game summary embed
         main_embed = discord.Embed(
             title=f"🧟 Game #{game_counter} Summary",
             description=f"**Setting:** {g.story_seed}",
-            color=0xFF0000 if not g.alive else 0x00FF00
+            color=0x00FF00 if g.alive else 0xFF0000
         )
-        main_embed.add_field(name="🏆 Winner", value=bold_name(winner) if winner != "None" else "None", inline=True)
+        main_embed.add_field(name="🏆 Winner", value=bold_name(winner) if winner != "None" else "None", inline=False)
 
         # Add top stats
         most_helpful = max(g.stats.get("helped", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("helped") else "None"
         most_sinister = max(g.stats.get("sinister", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("sinister") else "None"
         most_resourceful = max(g.stats.get("resourceful", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("resourceful") else "None"
 
+        stats_value = ""
         if most_helpful != "None":
-            main_embed.add_field(name="🏅 Most Helpful", value=bold_name(most_helpful), inline=True)
+            stats_value += f"🏅 **Most Helpful**: {bold_name(most_helpful)}\n"
         if most_sinister != "None":
-            main_embed.add_field(name="😈 Most Sinister", value=bold_name(most_sinister), inline=True)
+            stats_value += f"😈 **Most Sinister**: {bold_name(most_sinister)}\n"
         if most_resourceful != "None":
-            main_embed.add_field(name="🔧 Most Resourceful", value=bold_name(most_resourceful), inline=True)
+            stats_value += f"🔧 **Most Resourceful**: {bold_name(most_resourceful)}"
+
+        if stats_value:
+            main_embed.add_field(name="📊 Top Stats", value=stats_value, inline=False)
 
         main_embed.add_field(name="🔗 Game Start", value=f"[Jump to game]({first_message_url})", inline=False)
         main_embed.set_footer(text=f"Game ID: {game_counter}")
@@ -1096,45 +1067,36 @@ class ZombieGame(commands.Cog):
         # Send main embed
         await log_channel.send(embed=main_embed)
 
-        # Send death log embeds with navigation buttons if there are multiple
-        if len(death_embeds) > 1:
-            current_page = 0
-            message = await log_channel.send(embed=death_embeds[current_page])
+        # Create death log embeds
+        death_embeds = []
+        current_embed = discord.Embed(
+            title=f"💀 Death Log (Game #{game_counter})",
+            color=0xFF0000
+        )
 
-            async def navigate(reaction, user, direction):
-                nonlocal current_page
-                if user == self.bot.user:
-                    return
+        for i, (name, death_desc) in enumerate(g.death_log):
+            field_name = f"Death #{i+1}"
+            emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
+            field_value = f"{bold_name(name)} :{emoji_name}:\n{death_desc}"
+            current_embed.add_field(name=field_name, value=field_value, inline=False)
 
-                if direction == "left" and current_page > 0:
-                    current_page -= 1
-                elif direction == "right" and current_page < len(death_embeds) - 1:
-                    current_page += 1
-                else:
-                    return
+            if len(current_embed.fields) >= 5:  # Max 5 deaths per embed
+                death_embeds.append(current_embed)
+                current_embed = discord.Embed(
+                    title=f"💀 Death Log (Game #{game_counter}) - Continued",
+                    color=0xFF0000
+                )
 
-                await message.edit(embed=death_embeds[current_page])
+        if current_embed.fields:
+            death_embeds.append(current_embed)
 
-            await message.add_reaction("⬅")
-            await message.add_reaction("➡")
-
-            def check(reaction, user):
-                return user == interaction.user and str(reaction.emoji) in ["⬅", "➡"] and reaction.message.id == message.id
-
-            while True:
-                try:
-                    reaction, user = await self.bot.wait_for("reaction_add", check=check, timeout=60.0)
-                    if str(reaction.emoji) == "⬅":
-                        await navigate(reaction, user, "left")
-                    elif str(reaction.emoji) == "➡":
-                        await navigate(reaction, user, "right")
-
-                    await message.remove_reaction(reaction, user)
-                except asyncio.Timeout:
-                    await message.clear_reactions()
-                    break
-        elif death_embeds:
-            await log_channel.send(embed=death_embeds[0])
+        # Send death logs with button navigation
+        if death_embeds:
+            if len(death_embeds) == 1:
+                await log_channel.send(embed=death_embeds[0])
+            else:
+                view = DeathLogView(death_embeds)
+                await log_channel.send(embed=death_embeds[0], view=view)
 
 # --- Utilities ---
 async def generate_scene(g):
@@ -1224,7 +1186,7 @@ async def generate_choices(dilemma_text):
             "Format each as a numbered bullet starting with '1.' and '2.'"
         )}
     ], temperature=0.8)
-    if not raw_choices or "[ERROR:" in raw_choices:
+    if not raw_choices or "[ERROR:" in raw_choices]:
         return raw_choices
     return raw_choices
 
