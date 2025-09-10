@@ -10,11 +10,11 @@ import sqlite3
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from discord.ext import commands
-from discord import Interaction, app_commands
+from discord import Interaction, app_commands, ui
 from collections import defaultdict
 
 # --- Constants ---
-VERSION = "2.5.0"
+VERSION = "2.6.0"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("zombie_game")
 load_dotenv()
@@ -169,6 +169,7 @@ class GameState:
         self.game_mode = game_mode
         self.save_file = f"zombie_game_{initiator}.json"
         self.first_message_id = None
+        self.death_log = []
 
     def save(self):
         data = {
@@ -186,7 +187,8 @@ class GameState:
             "round_number": self.round_number,
             "game_speed": self.game_speed,
             "game_mode": self.game_mode,
-            "first_message_id": self.first_message_id
+            "first_message_id": self.first_message_id,
+            "death_log": self.death_log
         }
         with open(self.save_file, 'w') as f:
             json.dump(data, f, indent=2)
@@ -212,6 +214,7 @@ class GameState:
         game.round_number = data["round_number"]
         game.game_speed = data.get("game_speed", 1.0)
         game.first_message_id = data.get("first_message_id")
+        game.death_log = data.get("death_log", [])
         return game
 
     def delete_save(self):
@@ -862,6 +865,9 @@ class ZombieGame(commands.Cog):
                                     g.dead.append(char_name)
                                     new_deaths.append(char_name)
                                     logger.info(f"☠️ {char_name} marked dead from AI death analysis")
+                                    # Log death with brief description
+                                    death_desc = next((bullet for bullet in outcome_bullets if char_name.lower() in bullet.lower()), "Died in the struggle")
+                                    g.death_log.append((char_name, death_desc))
         # --- Ensure at least one death per round ---
         if not new_deaths and len(g.alive) > 1:
             victim = random.choice(g.alive)
@@ -869,6 +875,8 @@ class ZombieGame(commands.Cog):
             g.dead.append(victim)
             new_deaths.append(victim)
             logger.info(f"☠️ {victim} forcibly killed to ensure death per round.")
+            death_desc = f"Was overwhelmed and died in Round {g.round_number}"
+            g.death_log.append((victim, death_desc))
             outcome_bullets.append(f"• {bold_name(victim)} is overwhelmed and **dies**.")
         # --- Phase 8: Survivors ---
         formatted_survivors = []
@@ -931,51 +939,81 @@ class ZombieGame(commands.Cog):
         await stream_bullets_in_message(channel, deaths_block, "stats")
 
         # --- Final Stats ---
-        most_helpful = sorted(g.stats.get("helped", {}).items(), key=lambda x: x[1], reverse=True)[:3]
-        most_sinister = sorted(g.stats.get("sinister", {}).items(), key=lambda x: x[1], reverse=True)[:3]
-        most_resourceful = sorted(g.stats.get("resourceful", {}).items(), key=lambda x: x[1], reverse=True)[:3]
-        most_dignified = sorted(g.stats.get("dignified", {}).items(), key=lambda x: x[1], reverse=True)[:3]
-
-        bonds = sorted(g.stats.get("bonds", {}).items(), key=lambda x: x[1], reverse=True)[:3]
-        conflicts = sorted(g.stats.get("conflicts", {}).items(), key=lambda x: x[1], reverse=True)[:3]
-
         final_stats = []
 
-        if most_helpful:
-            helpful_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_helpful])
-            final_stats.append(f"━━━━━━━━━━━━━━\n🏅 **Most Helpful**\n━━━━━━━━━━━━━━\n{helpful_text}")
+        # Get top character for each stat
+        most_helpful = max(g.stats.get("helped", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("helped") else "None"
+        most_sinister = max(g.stats.get("sinister", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("sinister") else "None"
+        most_resourceful = max(g.stats.get("resourceful", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("resourceful") else "None"
+        most_dignified = max(g.stats.get("dignified", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("dignified") else "None"
+
+        # Get top bond and conflict
+        bonds = sorted(g.stats.get("bonds", {}).items(), key=lambda x: x[1], reverse=True)
+        conflicts = sorted(g.stats.get("conflicts", {}).items(), key=lambda x: x[1], reverse=True)
+
+        top_bond = bonds[0][0] if bonds else ("None", "None")
+        top_conflict = conflicts[0][0] if conflicts else ("None", "None")
+
+        # Add stats to final_stats with proper formatting
+        if most_helpful != "None":
+            emoji_name = CHARACTER_INFO.get(most_helpful, {}).get("emoji", "")
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+            if emoji:
+                final_stats.append(f"━━━━━━━━━━━━━━\n🏅 **Most Helpful**\n━━━━━━━━━━━━━━\n• {bold_name(most_helpful)} {emoji}")
+            else:
+                final_stats.append(f"━━━━━━━━━━━━━━\n🏅 **Most Helpful**\n━━━━━━━━━━━━━━\n• {bold_name(most_helpful)} :{emoji_name}:")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n🏅 **Most Helpful**: None\n━━━━━━━━━━━━━━")
 
-        if most_sinister:
-            sinister_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_sinister])
-            final_stats.append(f"━━━━━━━━━━━━━━\n😈 **Most Sinister**\n━━━━━━━━━━━━━━\n{sinister_text}")
+        if most_sinister != "None":
+            emoji_name = CHARACTER_INFO.get(most_sinister, {}).get("emoji", "")
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+            if emoji:
+                final_stats.append(f"━━━━━━━━━━━━━━\n😈 **Most Sinister**\n━━━━━━━━━━━━━━\n• {bold_name(most_sinister)} {emoji}")
+            else:
+                final_stats.append(f"━━━━━━━━━━━━━━\n😈 **Most Sinister**\n━━━━━━━━━━━━━━\n• {bold_name(most_sinister)} :{emoji_name}:")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n😈 **Most Sinister**: None\n━━━━━━━━━━━━━━")
 
-        if most_resourceful:
-            resourceful_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_resourceful])
-            final_stats.append(f"━━━━━━━━━━━━━━\n🔧 **Most Resourceful**\n━━━━━━━━━━━━━━\n{resourceful_text}")
+        if most_resourceful != "None":
+            emoji_name = CHARACTER_INFO.get(most_resourceful, {}).get("emoji", "")
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+            if emoji:
+                final_stats.append(f"━━━━━━━━━━━━━━\n🔧 **Most Resourceful**\n━━━━━━━━━━━━━━\n• {bold_name(most_resourceful)} {emoji}")
+            else:
+                final_stats.append(f"━━━━━━━━━━━━━━\n🔧 **Most Resourceful**\n━━━━━━━━━━━━━━\n• {bold_name(most_resourceful)} :{emoji_name}:")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n🔧 **Most Resourceful**: None\n━━━━━━━━━━━━━━")
 
-        if most_dignified:
-            dignified_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_dignified])
-            final_stats.append(f"━━━━━━━━━━━━━━\n🕊️ **Most Dignified**\n━━━━━━━━━━━━━━\n{dignified_text}")
+        if most_dignified != "None":
+            emoji_name = CHARACTER_INFO.get(most_dignified, {}).get("emoji", "")
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+            if emoji:
+                final_stats.append(f"━━━━━━━━━━━━━━\n🕊️ **Most Dignified**\n━━━━━━━━━━━━━━\n• {bold_name(most_dignified)} {emoji}")
+            else:
+                final_stats.append(f"━━━━━━━━━━━━━━\n🕊️ **Most Dignified**\n━━━━━━━━━━━━━━\n• {bold_name(most_dignified)} :{emoji_name}:")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n🕊️ **Most Dignified**: None\n━━━━━━━━━━━━━━")
 
-        if bonds:
-            bonds_text = "\n".join([f"• {bold_name(pair[0])} & {bold_name(pair[1])}: {count}" for (pair, count) in bonds])
-            final_stats.append(f"━━━━━━━━━━━━━━\n🤝 **Strongest Bonds**\n━━━━━━━━━━━━━━\n{bonds_text}")
+        if top_bond[0] != "None":
+            emoji1 = discord.utils.get(channel.guild.emojis, name=CHARACTER_INFO.get(top_bond[0], {}).get("emoji", ""))
+            emoji2 = discord.utils.get(channel.guild.emojis, name=CHARACTER_INFO.get(top_bond[1], {}).get("emoji", ""))
+            if emoji1 and emoji2:
+                final_stats.append(f"━━━━━━━━━━━━━━\n🤝 **Strongest Bond**\n━━━━━━━━━━━━━━\n• {bold_name(top_bond[0])} {emoji1} & {bold_name(top_bond[1])} {emoji2}")
+            else:
+                final_stats.append(f"━━━━━━━━━━━━━━\n🤝 **Strongest Bond**\n━━━━━━━━━━━━━━\n• {bold_name(top_bond[0])} & {bold_name(top_bond[1])}")
         else:
-            final_stats.append("━━━━━━━━━━━━━━\n🤝 **Strongest Bonds**: None\n━━━━━━━━━━━━━━")
+            final_stats.append("━━━━━━━━━━━━━━\n🤝 **Strongest Bond**: None\n━━━━━━━━━━━━━━")
 
-        if conflicts:
-            conflicts_text = "\n".join([f"• {bold_name(pair[0])} vs {bold_name(pair[1])}: {count}" for (pair, count) in conflicts])
-            final_stats.append(f"━━━━━━━━━━━━━━\n⚔️ **Biggest Conflicts**\n━━━━━━━━━━━━━━\n{conflicts_text}")
+        if top_conflict[0] != "None":
+            emoji1 = discord.utils.get(channel.guild.emojis, name=CHARACTER_INFO.get(top_conflict[0], {}).get("emoji", ""))
+            emoji2 = discord.utils.get(channel.guild.emojis, name=CHARACTER_INFO.get(top_conflict[1], {}).get("emoji", ""))
+            if emoji1 and emoji2:
+                final_stats.append(f"━━━━━━━━━━━━━━\n⚔️ **Biggest Conflict**\n━━━━━━━━━━━━━━\n• {bold_name(top_conflict[0])} {emoji1} vs {bold_name(top_conflict[1])} {emoji2}")
+            else:
+                final_stats.append(f"━━━━━━━━━━━━━━\n⚔️ **Biggest Conflict**\n━━━━━━━━━━━━━━\n• {bold_name(top_conflict[0])} vs {bold_name(top_conflict[1])}")
         else:
-            final_stats.append("━━━━━━━━━━━━━━\n⚔️ **Biggest Conflicts**: None\n━━━━━━━━━━━━━━")
+            final_stats.append("━━━━━━━━━━━━━━\n⚔️ **Biggest Conflict**: None\n━━━━━━━━━━━━━━")
 
         for stat in final_stats:
             await channel.send(stat)
@@ -992,7 +1030,7 @@ class ZombieGame(commands.Cog):
         # Log game to log channel
         await self.log_game_to_channel(channel)
 
-        await channel.send("━━━━━━━━━━━━━━\n🎬 Thanks for playing **Zombie Survival Game**!\n━━━━━━━━━━━━━━")
+        await channel.send(f"━━━━━━━━━━━━━━\n🎬 Thanks for playing **Zombie Survival Game #{game_counter}**!\n━━━━━━━━━━━━━━")
 
     async def log_game_to_channel(self, channel):
         if not ZOMBIE_LOG_CHANNEL_ID:
@@ -1006,29 +1044,97 @@ class ZombieGame(commands.Cog):
         winner = g.alive[0] if g.alive else "None"
         first_message_url = f"https://discord.com/channels/{channel.guild.id}/{channel.id}/{g.first_message_id}"
 
-        embed = discord.Embed(
-            title=f"🧟 Game #{game_counter} Summary",
-            description=f"**Setting:** {g.story_seed}\n**Winner:** {bold_name(winner)}",
-            color=0xFF0000 if not g.alive else 0x00FF00,
-            timestamp=datetime.utcnow()
+        # Create death log embeds
+        death_embeds = []
+        current_embed = discord.Embed(
+            title=f"🧟 Game #{game_counter} Death Log",
+            description=f"**Setting:** {g.story_seed}\n**Winner:** {bold_name(winner) if winner != 'None' else 'None'}",
+            color=0xFF0000 if not g.alive else 0x00FF00
         )
 
-        # Add stats fields
-        most_helpful = sorted(g.stats.get("helped", {}).items(), key=lambda x: x[1], reverse=True)[:1]
-        most_sinister = sorted(g.stats.get("sinister", {}).items(), key=lambda x: x[1], reverse=True)[:1]
-        most_resourceful = sorted(g.stats.get("resourceful", {}).items(), key=lambda x: x[1], reverse=True)[:1]
+        # Add death entries to embed
+        for i, (name, death_desc) in enumerate(g.death_log):
+            emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
+            if emoji:
+                death_entry = f"{i+1}. {bold_name(name)} {emoji} - {death_desc}"
+            else:
+                death_entry = f"{i+1}. {bold_name(name)} :{emoji_name}: - {death_desc}"
 
-        if most_helpful:
-            embed.add_field(name="🏅 Most Helpful", value=bold_name(most_helpful[0][0]), inline=True)
-        if most_sinister:
-            embed.add_field(name="😈 Most Sinister", value=bold_name(most_sinister[0][0]), inline=True)
-        if most_resourceful:
-            embed.add_field(name="🔧 Most Resourceful", value=bold_name(most_resourceful[0][0]), inline=True)
+            if len(current_embed.fields) >= 5:  # Max 5 fields per embed
+                death_embeds.append(current_embed)
+                current_embed = discord.Embed(color=0xFF0000 if not g.alive else 0x00FF00)
 
-        embed.add_field(name="🔗 Game Start", value=f"[Jump to game]({first_message_url})", inline=False)
-        embed.set_footer(text=f"Game ID: {game_counter}")
+            current_embed.add_field(name=f"Death #{i+1}", value=death_entry, inline=False)
 
-        await log_channel.send(embed=embed)
+        if current_embed.fields:  # Add the last embed if it has fields
+            death_embeds.append(current_embed)
+
+        # Create main game summary embed
+        main_embed = discord.Embed(
+            title=f"🧟 Game #{game_counter} Summary",
+            description=f"**Setting:** {g.story_seed}",
+            color=0xFF0000 if not g.alive else 0x00FF00
+        )
+        main_embed.add_field(name="🏆 Winner", value=bold_name(winner) if winner != "None" else "None", inline=True)
+
+        # Add top stats
+        most_helpful = max(g.stats.get("helped", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("helped") else "None"
+        most_sinister = max(g.stats.get("sinister", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("sinister") else "None"
+        most_resourceful = max(g.stats.get("resourceful", {}).items(), key=lambda x: x[1], default=("None", 0))[0] if g.stats.get("resourceful") else "None"
+
+        if most_helpful != "None":
+            main_embed.add_field(name="🏅 Most Helpful", value=bold_name(most_helpful), inline=True)
+        if most_sinister != "None":
+            main_embed.add_field(name="😈 Most Sinister", value=bold_name(most_sinister), inline=True)
+        if most_resourceful != "None":
+            main_embed.add_field(name="🔧 Most Resourceful", value=bold_name(most_resourceful), inline=True)
+
+        main_embed.add_field(name="🔗 Game Start", value=f"[Jump to game]({first_message_url})", inline=False)
+        main_embed.set_footer(text=f"Game ID: {game_counter}")
+
+        # Send main embed
+        await log_channel.send(embed=main_embed)
+
+        # Send death log embeds with navigation buttons if there are multiple
+        if len(death_embeds) > 1:
+            current_page = 0
+            message = await log_channel.send(embed=death_embeds[current_page])
+
+            async def navigate(reaction, user, direction):
+                nonlocal current_page
+                if user == self.bot.user:
+                    return
+
+                if direction == "left" and current_page > 0:
+                    current_page -= 1
+                elif direction == "right" and current_page < len(death_embeds) - 1:
+                    current_page += 1
+                else:
+                    return
+
+                await message.edit(embed=death_embeds[current_page])
+
+            await message.add_reaction("⬅")
+            await message.add_reaction("➡")
+
+            def check(reaction, user):
+                return user == interaction.user and str(reaction.emoji) in ["⬅", "➡"] and reaction.message.id == message.id
+
+            while True:
+                try:
+                    reaction, user = await self.bot.wait_for("reaction_add", check=check, timeout=60.0)
+                    if str(reaction.emoji) == "⬅":
+                        await navigate(reaction, user, "left")
+                    elif str(reaction.emoji) == "➡":
+                        await navigate(reaction, user, "right")
+
+                    await message.remove_reaction(reaction, user)
+                except asyncio.Timeout:
+                    await message.clear_reactions()
+                    break
+        elif death_embeds:
+            await log_channel.send(embed=death_embeds[0])
 
 # --- Utilities ---
 async def generate_scene(g):
