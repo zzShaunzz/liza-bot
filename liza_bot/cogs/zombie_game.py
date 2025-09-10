@@ -10,16 +10,16 @@ import sqlite3
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from discord.ext import commands
-from discord import Interaction, app_commands, Embed
+from discord import Interaction, app_commands
 from collections import defaultdict
 
 # --- Constants ---
-VERSION = "2.4.2"
+VERSION = "2.5.0"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("zombie_game")
 load_dotenv()
 
-# --- Environment Variables ---
+# --- Game Configuration ---
 ZOMBIE_CHANNEL_ID = int(os.getenv("ZOMBIE_CHANNEL_ID", "0"))
 ZOMBIE_LOG_CHANNEL_ID = int(os.getenv("ZOMBIE_LOG_CHANNEL_ID", "0"))
 MODEL = os.getenv("MODEL")
@@ -168,19 +168,7 @@ class GameState:
         self.game_speed = 1.0
         self.game_mode = game_mode
         self.save_file = f"zombie_game_{initiator}.json"
-        self.game_number = self._get_next_game_number()
-
-    def _get_next_game_number(self):
-        try:
-            conn = sqlite3.connect('zombie_leaderboard.db')
-            c = conn.cursor()
-            c.execute("SELECT COUNT(*) FROM games")
-            count = c.fetchone()[0]
-            conn.close()
-            return count + 1
-        except Exception as e:
-            logger.error(f"Error getting game number: {e}")
-            return 1
+        self.first_message_id = None
 
     def save(self):
         data = {
@@ -198,7 +186,7 @@ class GameState:
             "round_number": self.round_number,
             "game_speed": self.game_speed,
             "game_mode": self.game_mode,
-            "game_number": self.game_number
+            "first_message_id": self.first_message_id
         }
         with open(self.save_file, 'w') as f:
             json.dump(data, f, indent=2)
@@ -223,7 +211,7 @@ class GameState:
         game.story_context = data["story_context"]
         game.round_number = data["round_number"]
         game.game_speed = data.get("game_speed", 1.0)
-        game.game_number = data.get("game_number", 1)
+        game.first_message_id = data.get("first_message_id")
         return game
 
     def delete_save(self):
@@ -234,8 +222,7 @@ class GameState:
         try:
             conn = sqlite3.connect('zombie_leaderboard.db')
             c = conn.cursor()
-            c.execute("INSERT INTO games (initiator, winner, game_number) VALUES (?, ?, ?)",
-                      (self.initiator, winner, self.game_number))
+            c.execute("INSERT INTO games (initiator, winner) VALUES (?, ?)", (self.initiator, winner))
             game_id = c.lastrowid
             for char in CHARACTERS:
                 survived = char in self.alive
@@ -262,25 +249,6 @@ class GameState:
         except Exception as e:
             logger.error(f"Error saving to leaderboard: {e}")
 
-    def log_game_to_channel(self, channel_id, first_message_url):
-        try:
-            channel = self.bot.get_channel(channel_id)
-            if not channel:
-                logger.error(f"Log channel {channel_id} not found.")
-                return
-            embed = Embed(
-                title=f"🧟 Zombie Game #{self.game_number} Summary",
-                description=f"**Setting:** {self.story_seed}\n"
-                            f"**Winner:** {self.alive[0] if len(self.alive) == 1 else 'None'}\n"
-                            f"**Survivors:** {', '.join(self.alive) if self.alive else 'None'}\n"
-                            f"**Deaths:** {', '.join(self.dead) if self.dead else 'None'}",
-                color=0xFF0000,
-                url=first_message_url
-            )
-            channel.send(embed=embed)
-        except Exception as e:
-            logger.error(f"Error logging game: {e}")
-
 # --- Database Setup ---
 def init_db():
     conn = sqlite3.connect('zombie_leaderboard.db')
@@ -289,7 +257,6 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   initiator INTEGER,
                   winner TEXT,
-                  game_number INTEGER,
                   completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     c.execute('''CREATE TABLE IF NOT EXISTS character_stats
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -357,6 +324,7 @@ async def generate_ai_text(messages, temperature=0.8):
 # --- Game Logic ---
 active_game = None
 current_speed = 1.0
+game_counter = 0
 
 def is_active():
     return active_game is not None and not active_game.terminated
@@ -430,7 +398,7 @@ def build_scene_prompt():
     ])
     return (
         "You are a text-only assistant. Do not generate or suggest images under any circumstances. "
-        "Keep scenes concise - maximum 5 short bullet points. Each bullet should be 1 sentence max. "
+        "Keep scenes concise - maximum 5 short bullet points. Each bullet should be 1 direct sentence. "
         "Do not speak as an assistant. Do not offer help, commentary, or meta-observations. "
         "The world has fallen to a zombie outbreak. The youthful survivors are hunted, exhausted, and emotionally frayed. "
         "Every scene continues their desperate struggle against the undead and each other. "
@@ -444,6 +412,7 @@ def build_scene_prompt():
         "Avoid repeating scenes or plotlines from previous sessions. "
         "Never revive characters who have died. "
         "Don't treat dead characters as alive. "
+        "Do not include deaths in scene descriptions. "
         "Do not list multiple options. Do not use numbered choices. Only continue the story."
     )
 
@@ -469,8 +438,7 @@ def build_scene_summary_prompt(scene_text):
     return (
         f"{active_game.story_context}\n"
         f"Scene:\n{scene_text}\n\n"
-        "🧠 Summarize the key events in **one direct sentence**. "
-        "Focus on the most critical developments."
+        "🧠 Summarize the key events in **one direct sentence**"
     )
 
 # --- Game Commands ---
@@ -484,6 +452,7 @@ class ZombieGame(commands.Cog):
 
     @app_commands.command(name="lizazombie", description="Start a zombie survival game")
     async def lizazombie_slash(self, interaction: Interaction):
+        global game_counter
         if not OPENROUTER_API_KEYS:
             await interaction.response.send_message("❌ No AI keys available. Cannot start the game.", ephemeral=True)
             return
@@ -499,15 +468,18 @@ class ZombieGame(commands.Cog):
             view = discord.ui.View()
             continue_btn = discord.ui.Button(label="Continue", style=discord.ButtonStyle.green)
             new_btn = discord.ui.Button(label="New Game", style=discord.ButtonStyle.red)
+
             async def continue_callback(interaction):
                 global active_game, current_speed
                 active_game = existing_game
                 current_speed = active_game.game_speed
                 await interaction.response.edit_message(content="🔄 Continuing previous game...", view=None)
                 await self.run_round(interaction.channel)
+
             async def new_callback(interaction):
                 await interaction.response.edit_message(content="🔄 Starting new game...", view=None)
                 await self.ask_game_mode_slash(interaction)
+
             continue_btn.callback = continue_callback
             new_btn.callback = new_callback
             view.add_item(continue_btn)
@@ -520,12 +492,15 @@ class ZombieGame(commands.Cog):
         view = discord.ui.View()
         player_btn = discord.ui.Button(label="Player Game", style=discord.ButtonStyle.blurple, emoji="👤")
         auto_btn = discord.ui.Button(label="Auto Game", style=discord.ButtonStyle.green, emoji="🤖")
+
         async def player_callback(interaction):
             await interaction.response.edit_message(content="🔄 Starting player game...", view=None)
             await self.ask_game_speed(interaction, "player")
+
         async def auto_callback(interaction):
             await interaction.response.edit_message(content="🔄 Starting auto game...", view=None)
             await self.ask_game_speed(interaction, "auto")
+
         player_btn.callback = player_callback
         auto_btn.callback = auto_callback
         view.add_item(player_btn)
@@ -538,54 +513,67 @@ class ZombieGame(commands.Cog):
         speed_15x = discord.ui.Button(label="1.5x (Fast)", style=discord.ButtonStyle.secondary)
         speed_2x = discord.ui.Button(label="2.0x (Very Fast)", style=discord.ButtonStyle.secondary)
         speed_3x = discord.ui.Button(label="3.0x (Extreme)", style=discord.ButtonStyle.danger)
+
         async def speed_1x_callback(interaction):
-            global current_speed, active_game
+            global current_speed, active_game, game_counter
             current_speed = 1.0
+            game_counter += 1
             await interaction.response.edit_message(content="⚡ Game speed set to 1.0x (Normal). Starting game...", view=None)
             success = await start_game_async(interaction.user.id, game_mode, speed=1.0)
             if not success:
                 await interaction.followup.send("❌ Failed to start the game. Please try again.", ephemeral=True)
                 return
-            msg = await interaction.channel.send("🧟‍♀️ Game starting in...")
+            msg = await interaction.channel.send(f"🧟‍♀️ **Game #{game_counter}** starting in...")
+            active_game.first_message_id = msg.id
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
+
         async def speed_15x_callback(interaction):
-            global current_speed, active_game
+            global current_speed, active_game, game_counter
             current_speed = 1.5
+            game_counter += 1
             await interaction.response.edit_message(content="⚡ Game speed set to 1.5x (Fast). Starting game...", view=None)
             success = await start_game_async(interaction.user.id, game_mode, speed=1.5)
             if not success:
                 await interaction.followup.send("❌ Failed to start the game. Please try again.", ephemeral=True)
                 return
-            msg = await interaction.channel.send("🧟‍♀️ Game starting in...")
+            msg = await interaction.channel.send(f"🧟‍♀️ **Game #{game_counter}** starting in...")
+            active_game.first_message_id = msg.id
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
+
         async def speed_2x_callback(interaction):
-            global current_speed, active_game
+            global current_speed, active_game, game_counter
             current_speed = 2.0
+            game_counter += 1
             await interaction.response.edit_message(content="⚡ Game speed set to 2.0x (Very Fast). Starting game...", view=None)
             success = await start_game_async(interaction.user.id, game_mode, speed=2.0)
             if not success:
                 await interaction.followup.send("❌ Failed to start the game. Please try again.", ephemeral=True)
                 return
-            msg = await interaction.channel.send("🧟‍♀️ Game starting in...")
+            msg = await interaction.channel.send(f"🧟‍♀️ **Game #{game_counter}** starting in...")
+            active_game.first_message_id = msg.id
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
+
         async def speed_3x_callback(interaction):
-            global current_speed, active_game
+            global current_speed, active_game, game_counter
             current_speed = 3.0
+            game_counter += 1
             await interaction.response.edit_message(content="⚡ Game speed set to 3.0x (Extreme). Starting game...", view=None)
             success = await start_game_async(interaction.user.id, game_mode, speed=3.0)
             if not success:
                 await interaction.followup.send("❌ Failed to start the game. Please try again.", ephemeral=True)
                 return
-            msg = await interaction.channel.send("🧟‍♀️ Game starting in...")
+            msg = await interaction.channel.send(f"🧟‍♀️ **Game #{game_counter}** starting in...")
+            active_game.first_message_id = msg.id
             await countdown_message(msg, 3, "🧟‍♀️ Game starting in...")
             await msg.edit(content="🎮 Game loading...")
             await self.run_round(interaction.channel)
+
         speed_1x.callback = speed_1x_callback
         speed_15x.callback = speed_15x_callback
         speed_2x.callback = speed_2x_callback
@@ -636,7 +624,7 @@ class ZombieGame(commands.Cog):
         if not stats:
             await interaction.followup.send("❌ No leaderboard data available yet.")
             return
-        embed = Embed(
+        embed = discord.Embed(
             title="🧟 Zombie Survival Leaderboard",
             description="Statistics from all completed games",
             color=0x00ff00
@@ -676,7 +664,7 @@ class ZombieGame(commands.Cog):
             await channel.send(f"⚠️ {raw_summary or 'AI is not responding. Ending the game.'}")
             end_game()
             return
-        scene_bullets.append(f"\n━━━━━━━━━━━━━━\n📝 **Scene Summary**\n━━━━━━━━━━━━━━")
+        scene_bullets.append(f"\n━━━━━━━━━━━━━━\n📝 **Scene Summary**")
         scene_bullets.append(f"• {bold_character_names(raw_summary)}")
         await channel.send(f"━━━━━━━━━━━━━━\n🎭 **Scene {g.round_number}**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, scene_bullets, "scene")
@@ -723,23 +711,23 @@ class ZombieGame(commands.Cog):
                     icon = "🟡"
                 elif any(word in health_status.lower() for word in ['critical', 'dying', 'bleeding', 'unconscious', 'fever', 'submerged', 'unseen']):
                     icon = "🔴"
-                emoji_name = CHARACTER_INFO.get(matched_character, {}).get("emoji", "")
-                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
+                emoji_name = CHARACTER_INFO[matched_character]["emoji"]
+                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
                 if emoji:
                     formatted_line = f"{icon} {bold_name(matched_character)} {emoji} : {health_status}"
                 else:
-                    formatted_line = f"{icon} {bold_name(matched_character)} :{emoji_name}: : {health_status}" if emoji_name else f"{icon} {bold_name(matched_character)} : {health_status}"
+                    formatted_line = f"{icon} {bold_name(matched_character)} :{emoji_name}: : {health_status}"
                 health_lines.append(formatted_line)
         # Add missing characters with default statuses
         for name in g.alive:
             if name not in processed_characters:
-                emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
-                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
+                emoji_name = CHARACTER_INFO[name]["emoji"]
+                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
                 default_status = random.choice(["Stable", "Alert", "Tired"])
                 if emoji:
                     health_lines.append(f"🟢 {bold_name(name)} {emoji} : {default_status}")
                 else:
-                    health_lines.append(f"🟢 {bold_name(name)} :{emoji_name}: : {default_status}" if emoji_name else f"🟢 {bold_name(name)} : {default_status}")
+                    health_lines.append(f"🟢 {bold_name(name)} :{emoji_name}: : {default_status}")
         await channel.send("━━━━━━━━━━━━━━\n🩺 **Health Status**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, health_lines, "health")
         # --- Phase 2.5: Group Dynamics ---
@@ -750,7 +738,7 @@ class ZombieGame(commands.Cog):
             return
         dynamics_bullets = enforce_bullets(raw_dynamics)
         await channel.send("━━━━━━━━━━━━━━\n💬 **Group Dynamics**\n━━━━━━━━━━━━━━")
-        await stream_bullets_in_message(channel, dynamics_bullets, "dynamics")
+        await stream_bullets_in_message(channel, dynamics_bullets[:2], "dynamics")
         # --- Phase 3: Dilemma ---
         raw_dilemma = await generate_dilemma(raw_scene, raw_health, g)
         if not raw_dilemma or "[ERROR:" in raw_dilemma:
@@ -842,7 +830,7 @@ class ZombieGame(commands.Cog):
             end_game()
             return
         outcome_bullets = enforce_bullets(raw_outcome)
-        await channel.send(f"━━━━━━━━━━━━━━━━━━━━━━━\n     🩸 End of Round {g.round} 🩸\n━━━━━━━━━━━━━━━━━━━━━━━")
+        await channel.send(f"━━━━━━━━━━━━━━━━━━━━━━━\n🩸 **End of Round {g.round}**\n━━━━━━━━━━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, outcome_bullets, "summary")
         # --- Phase 7: Death Detection ---
         death_detection_prompt = (
@@ -886,19 +874,19 @@ class ZombieGame(commands.Cog):
         formatted_survivors = []
         for name in g.alive:
             emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
-            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
             if emoji:
                 formatted_survivors.append(f"• {bold_name(name)} {emoji}")
             else:
-                formatted_survivors.append(f"• {bold_name(name)} :{emoji_name}:" if emoji_name else f"• {bold_name(name)}")
+                formatted_survivors.append(f"• {bold_name(name)} :{emoji_name}:")
         formatted_deaths = []
         for name in new_deaths:
             emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
-            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
             if emoji:
                 formatted_deaths.append(f"• {bold_name(name)} {emoji}")
             else:
-                formatted_deaths.append(f"• {bold_name(name)} :{emoji_name}:" if emoji_name else f"• {bold_name(name)}")
+                formatted_deaths.append(f"• {bold_name(name)} :{emoji_name}:")
         await channel.send("━━━━━━━━━━━━━━\n💀 **Deaths This Round**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, formatted_deaths, "stats")
         await channel.send("━━━━━━━━━━━━━━\n🧍 **Remaining Survivors**\n━━━━━━━━━━━━━━")
@@ -908,11 +896,11 @@ class ZombieGame(commands.Cog):
             if len(g.alive) == 1:
                 survivor = g.alive[0]
                 emoji_name = CHARACTER_INFO.get(survivor, {}).get("emoji", "")
-                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
+                emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
                 if emoji:
                     await channel.send(f"🏆 {bold_name(survivor)} {emoji} is the sole survivor!")
                 else:
-                    await channel.send(f"🏆 {bold_name(survivor)} :{emoji_name}: is the sole survivor!" if emoji_name else f"🏆 {bold_name(survivor)} is the sole survivor!")
+                    await channel.send(f"🏆 {bold_name(survivor)} :{emoji_name}: is the sole survivor!")
                 g.save_to_leaderboard(winner=survivor)
             else:
                 await channel.send("💀 No survivors remain.")
@@ -932,55 +920,66 @@ class ZombieGame(commands.Cog):
         deaths_block = []
         for name in valid_deaths:
             emoji_name = CHARACTER_INFO.get(name, {}).get("emoji", "")
-            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name) if emoji_name else None
+            emoji = discord.utils.get(channel.guild.emojis, name=emoji_name)
             if emoji:
                 deaths_block.append(f"• {bold_name(name)} {emoji}")
             else:
-                deaths_block.append(f"• {bold_name(name)} :{emoji_name}:" if emoji_name else f"• {bold_name(name)}")
+                deaths_block.append(f"• {bold_name(name)} :{emoji_name}:")
         if not deaths_block:
             deaths_block = ["• None"]
         await channel.send("━━━━━━━━━━━━━━\n🪦 **Deaths (most recent first)**\n━━━━━━━━━━━━━━")
         await stream_bullets_in_message(channel, deaths_block, "stats")
+
         # --- Final Stats ---
         most_helpful = sorted(g.stats.get("helped", {}).items(), key=lambda x: x[1], reverse=True)[:3]
         most_sinister = sorted(g.stats.get("sinister", {}).items(), key=lambda x: x[1], reverse=True)[:3]
         most_resourceful = sorted(g.stats.get("resourceful", {}).items(), key=lambda x: x[1], reverse=True)[:3]
         most_dignified = sorted(g.stats.get("dignified", {}).items(), key=lambda x: x[1], reverse=True)[:3]
+
         bonds = sorted(g.stats.get("bonds", {}).items(), key=lambda x: x[1], reverse=True)[:3]
         conflicts = sorted(g.stats.get("conflicts", {}).items(), key=lambda x: x[1], reverse=True)[:3]
+
         final_stats = []
+
         if most_helpful:
             helpful_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_helpful])
             final_stats.append(f"━━━━━━━━━━━━━━\n🏅 **Most Helpful**\n━━━━━━━━━━━━━━\n{helpful_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n🏅 **Most Helpful**: None\n━━━━━━━━━━━━━━")
+
         if most_sinister:
             sinister_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_sinister])
             final_stats.append(f"━━━━━━━━━━━━━━\n😈 **Most Sinister**\n━━━━━━━━━━━━━━\n{sinister_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n😈 **Most Sinister**: None\n━━━━━━━━━━━━━━")
+
         if most_resourceful:
             resourceful_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_resourceful])
             final_stats.append(f"━━━━━━━━━━━━━━\n🔧 **Most Resourceful**\n━━━━━━━━━━━━━━\n{resourceful_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n🔧 **Most Resourceful**: None\n━━━━━━━━━━━━━━")
+
         if most_dignified:
             dignified_text = "\n".join([f"• {bold_name(name)}: {count}" for name, count in most_dignified])
             final_stats.append(f"━━━━━━━━━━━━━━\n🕊️ **Most Dignified**\n━━━━━━━━━━━━━━\n{dignified_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n🕊️ **Most Dignified**: None\n━━━━━━━━━━━━━━")
+
         if bonds:
             bonds_text = "\n".join([f"• {bold_name(pair[0])} & {bold_name(pair[1])}: {count}" for (pair, count) in bonds])
             final_stats.append(f"━━━━━━━━━━━━━━\n🤝 **Strongest Bonds**\n━━━━━━━━━━━━━━\n{bonds_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n🤝 **Strongest Bonds**: None\n━━━━━━━━━━━━━━")
+
         if conflicts:
             conflicts_text = "\n".join([f"• {bold_name(pair[0])} vs {bold_name(pair[1])}: {count}" for (pair, count) in conflicts])
             final_stats.append(f"━━━━━━━━━━━━━━\n⚔️ **Biggest Conflicts**\n━━━━━━━━━━━━━━\n{conflicts_text}")
         else:
             final_stats.append("━━━━━━━━━━━━━━\n⚔️ **Biggest Conflicts**: None\n━━━━━━━━━━━━━━")
+
         for stat in final_stats:
             await channel.send(stat)
+
         if g.story_context:
             raw_recap = await generate_full_recap(g)
             if not raw_recap or "[ERROR:" in raw_recap:
@@ -989,14 +988,47 @@ class ZombieGame(commands.Cog):
                 recap_bullets = enforce_bullets(raw_recap)
                 await channel.send("━━━━━━━━━━━━━━\n🧠 **Game Recap**\n━━━━━━━━━━━━━━")
                 await stream_bullets_in_message(channel, recap_bullets, "summary")
-        else:
-            await channel.send("📝 *Game ended before any story developed*")
-        await channel.send(f"🎬 Thanks for surviving (or not) the zombie apocalypse in **Game #{g.game_number}**. Until next time...")
 
-        # --- Log Game ---
-        if ZOMBIE_LOG_CHANNEL_ID:
-            first_message = (await channel.history(limit=100).flatten())[-1]
-            g.log_game_to_channel(ZOMBIE_LOG_CHANNEL_ID, first_message.jump_url)
+        # Log game to log channel
+        await self.log_game_to_channel(channel)
+
+        await channel.send("━━━━━━━━━━━━━━\n🎬 Thanks for playing **Zombie Survival Game**!\n━━━━━━━━━━━━━━")
+
+    async def log_game_to_channel(self, channel):
+        if not ZOMBIE_LOG_CHANNEL_ID:
+            return
+
+        log_channel = self.bot.get_channel(ZOMBIE_LOG_CHANNEL_ID)
+        if not log_channel:
+            return
+
+        g = active_game
+        winner = g.alive[0] if g.alive else "None"
+        first_message_url = f"https://discord.com/channels/{channel.guild.id}/{channel.id}/{g.first_message_id}"
+
+        embed = discord.Embed(
+            title=f"🧟 Game #{game_counter} Summary",
+            description=f"**Setting:** {g.story_seed}\n**Winner:** {bold_name(winner)}",
+            color=0xFF0000 if not g.alive else 0x00FF00,
+            timestamp=datetime.utcnow()
+        )
+
+        # Add stats fields
+        most_helpful = sorted(g.stats.get("helped", {}).items(), key=lambda x: x[1], reverse=True)[:1]
+        most_sinister = sorted(g.stats.get("sinister", {}).items(), key=lambda x: x[1], reverse=True)[:1]
+        most_resourceful = sorted(g.stats.get("resourceful", {}).items(), key=lambda x: x[1], reverse=True)[:1]
+
+        if most_helpful:
+            embed.add_field(name="🏅 Most Helpful", value=bold_name(most_helpful[0][0]), inline=True)
+        if most_sinister:
+            embed.add_field(name="😈 Most Sinister", value=bold_name(most_sinister[0][0]), inline=True)
+        if most_resourceful:
+            embed.add_field(name="🔧 Most Resourceful", value=bold_name(most_resourceful[0][0]), inline=True)
+
+        embed.add_field(name="🔗 Game Start", value=f"[Jump to game]({first_message_url})", inline=False)
+        embed.set_footer(text=f"Game ID: {game_counter}")
+
+        await log_channel.send(embed=embed)
 
 # --- Utilities ---
 async def generate_scene(g):
@@ -1044,7 +1076,7 @@ async def generate_group_dynamics(scene_text, health_text, g):
             f"{g.story_context}\n"
             f"Scene:\n{scene_text}\n\n"
             f"Health:\n{health_text}\n\n"
-            "🧠 Describe the group dynamics in 2-3 direct bullet points. "
+            "🧠 Describe the group dynamics in 2 brief bullet points. "
             "Focus on bonds, conflicts, and emotional shifts. "
             "Format as bullet points using •. "
             "Do not include choices or options. Only describe the group dynamics."
