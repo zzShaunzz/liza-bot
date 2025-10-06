@@ -6,6 +6,11 @@ import re
 import json
 import os
 import random
+import aiohttp
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 print("[NostalgiaCog] nostalgia_pull.py was imported.")
 
@@ -44,16 +49,13 @@ class NostalgiaCog(commands.Cog):
     async def _run_nostalgia_pull(self, source):
         one_year_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=365)
         eligible_messages = []
-
         channels = list(source.guild.text_channels)
         random.shuffle(channels)
         scanned_channels = 0
-
         for channel in channels:
             if scanned_channels >= MAX_CHANNELS:
                 break
             scanned_channels += 1
-
             try:
                 async for msg in channel.history(oldest_first=True):
                     if (
@@ -65,7 +67,6 @@ class NostalgiaCog(commands.Cog):
                         eligible_messages.append(msg)
             except discord.Forbidden:
                 continue
-
         if not eligible_messages:
             response = "😔 Couldn't find any new messages older than a year. Try again later!"
             if isinstance(source, commands.Context):
@@ -73,10 +74,12 @@ class NostalgiaCog(commands.Cog):
             else:
                 await source.followup.send(response)
             return
-
         pulled_message = random.choice(eligible_messages)
         self.pulled_ids.add(str(pulled_message.id))
         self.save_pulled_ids()
+
+        # Generate AI context
+        context = await self.generate_ai_context(pulled_message.content)
 
         # Get surrounding messages within ±20 minutes
         context_messages = []
@@ -92,10 +95,7 @@ class NostalgiaCog(commands.Cog):
         except discord.Forbidden:
             pass
 
-        context_summary = self.generate_context(pulled_message, context_messages)
-
         message_link = f"https://discord.com/channels/{pulled_message.guild.id}/{pulled_message.channel.id}/{pulled_message.id}"
-
         embed = discord.Embed(
             title="📦 Nostalgia Pull",
             description=(
@@ -107,42 +107,53 @@ class NostalgiaCog(commands.Cog):
             color=discord.Color.gold()
         )
         embed.set_footer(text="A memory from the past...")
-
         view = JumpToMessageView(url=message_link)
-
         if isinstance(source, commands.Context):
-            await source.send(content=context_summary, embed=embed, view=view)
+            await source.send(content=context, embed=embed, view=view)
         else:
-            await source.followup.send(content=context_summary, embed=embed, view=view)
+            await source.followup.send(content=context, embed=embed, view=view)
 
-    def generate_context(self, message: discord.Message, surrounding: list[discord.Message]) -> str:
-        author = message.author.display_name
-        participants = {msg.author.display_name for msg in surrounding if msg.author != message.author}
-        keywords = []
+    async def generate_ai_context(self, message_content):
+        """Generate a short AI context using OpenRouter API."""
+        api_keys = [
+            os.getenv("OPENROUTER_API_KEY_1"),
+            os.getenv("OPENROUTER_API_KEY_2"),
+            os.getenv("OPENROUTER_API_KEY_3"),
+            os.getenv("OPENROUTER_API_KEY_4"),
+            os.getenv("OPENROUTER_API_KEY_5"),
+            os.getenv("OPENROUTER_API_KEY_6"),
+        ]
+        api_key = random.choice([key for key in api_keys if key])
 
-        for msg in surrounding:
-            cleaned = re.sub(r"<a?:\w+:\d+>", "", msg.content)  # emojis
-            cleaned = re.sub(r"https?://\S+", "", cleaned)      # URLs
-            cleaned = re.sub(r"<@\d+>", "", cleaned)            # mentions
-            cleaned = re.sub(r"\b\d{6,}\b", "", cleaned)        # long numbers
-            words = re.findall(r"\b\w+\b", cleaned.lower())
-            keywords.extend([w for w in words if len(w) > 3])
+        if not api_key:
+            return "🤖 No AI context available (API key missing)."
 
-        keyword_freq = {}
-        for word in keywords:
-            keyword_freq[word] = keyword_freq.get(word, 0) + 1
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "mistralai/mistral-7b-instruct",
+            "messages": [
+                {"role": "user", "content": f"Summarize the following message in 10 words or less: '{message_content}'"}
+            ],
+            "max_tokens": 10
+        }
 
-        top_keywords = sorted(keyword_freq.items(), key=lambda x: x[1], reverse=True)[:3]
-        topic = ", ".join([kw for kw, _ in top_keywords])
-
-        if participants and topic:
-            return f"🧠 Around this time, {author} was chatting with {', '.join(participants)} about {topic}."
-        elif participants:
-            return f"🧠 {author} was part of a brief exchange with {', '.join(participants)}."
-        elif topic:
-            return f"📜 This message from {author} came during a quiet moment, focused on {topic}."
-        else:
-            return f"📜 A reflective moment from {author}, with little else around it."
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return f"🤖 {data['choices'][0]['message']['content'].strip()}"
+                    else:
+                        error = await response.text()
+                        logger.error(f"OpenRouter API error: {error}")
+                        return "🤖 Failed to generate context."
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            return "🤖 Failed to generate context."
 
     def load_pulled_ids(self):
         if not os.path.exists(LOG_FILE):
@@ -154,6 +165,5 @@ class NostalgiaCog(commands.Cog):
         with open(LOG_FILE, "w") as f:
             json.dump(list(self.pulled_ids), f, indent=2)
 
-# Required setup function for cog loading
 async def setup(bot):
     await bot.add_cog(NostalgiaCog(bot))
