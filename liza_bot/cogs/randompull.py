@@ -4,70 +4,92 @@ import random
 import aiohttp
 import os
 import logging
+import datetime
+import re
+import json
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+LOG_FILE = "randompull_log.json"
+
+class JumpToMessageView(discord.ui.View):
+    def __init__(self, url: str):
+        super().__init__()
+        self.add_item(discord.ui.Button(label="Jump to original message", url=url, style=discord.ButtonStyle.link))
 
 class RandomPull(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.pulled_ids = self.load_pulled_ids()
+        logger.info("[RandomPullCog] Loaded.")
 
-    @commands.hybrid_command(
-        name="randompull",
-        description="Pulls a random message from the server and provides AI-generated context."
-    )
-    async def random_pull(self, ctx):
-        await ctx.defer()
+    @commands.command(name="randompull")
+    async def randompull_prefix(self, ctx: commands.Context):
+        async with ctx.typing():
+            await self._run_random_pull(ctx)
 
-        # Fetch all accessible text channels
-        channels = [
-            channel for channel in ctx.guild.text_channels
-            if channel.permissions_for(ctx.me).read_messages
-        ]
-        if not channels:
-            await ctx.send("No accessible text channels found in this server.")
+    @app_commands.command(name="randompull", description="Pull a random message from the server and reflect on it.")
+    async def randompull_slash(self, interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True)
+        await self._run_random_pull(interaction)
+
+    async def _run_random_pull(self, source):
+        # Fetch all text channels
+        channels = list(source.guild.text_channels)
+        random.shuffle(channels)
+
+        # Fetch a random message
+        eligible_messages = []
+        for channel in channels:
+            try:
+                async for msg in channel.history(limit=100):
+                    if (
+                        not msg.author.bot
+                        and msg.content
+                        and str(msg.id) not in self.pulled_ids
+                    ):
+                        eligible_messages.append(msg)
+            except discord.Forbidden:
+                continue
+
+        if not eligible_messages:
+            response = "😔 Couldn't find any messages to pull. Try again later!"
+            if isinstance(source, commands.Context):
+                await source.send(response)
+            else:
+                await source.followup.send(response)
             return
 
-        # Select a random channel
-        channel = random.choice(channels)
+        pulled_message = random.choice(eligible_messages)
+        self.pulled_ids.add(str(pulled_message.id))
+        self.save_pulled_ids()
 
-        try:
-            # Fetch up to 100 messages
-            messages = [msg async for msg in channel.history(limit=100)]
-            if not messages:
-                await ctx.send(f"No messages found in {channel.mention}.")
-                return
+        # Generate AI context
+        context = await self.generate_ai_context(pulled_message.content)
 
-            # Select a random message with text content
-            message = random.choice(messages)
-            if not message.content:
-                await ctx.send("Selected message has no text content.")
-                return
+        # Create message link
+        message_link = f"https://discord.com/channels/{pulled_message.guild.id}/{pulled_message.channel.id}/{pulled_message.id}"
 
-            # Generate AI context
-            context = await self.generate_ai_context(message.content)
-            jump_url = message.jump_url
+        # Build embed
+        embed = discord.Embed(
+            title="🎲 Random Message Pull",
+            description=(
+                f"**From:** {pulled_message.author.mention}\n"
+                f"**Channel:** {pulled_message.channel.mention}\n\n"
+                f"**{pulled_message.content}**"
+            ),
+            timestamp=pulled_message.created_at,
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text="A random moment from the server...")
 
-            # Build and send embed
-            embed = discord.Embed(
-                title="Random Message Pull",
-                description=(
-                    f"**Message:** {message.content}\n"
-                    f"**Channel:** {channel.mention}\n"
-                    f"**Author:** {message.author.mention}\n"
-                    f"**Sent at:** {message.created_at.strftime('%Y-%m-%d %H:%M:%S')}"
-                ),
-                color=discord.Color.random()
-            )
-            embed.add_field(name="AI Context", value=context, inline=False)
-            embed.add_field(name="Jump to Message", value=f"[Click here]({jump_url})", inline=False)
-
-            await ctx.send(embed=embed)
-
-        except discord.Forbidden:
-            await ctx.send(f"I don't have permission to read messages in {channel.mention}.")
-        except Exception as e:
-            logging.error(f"Error in random_pull: {e}")
-            await ctx.send(f"An error occurred: {e}")
+        # Send response
+        view = JumpToMessageView(url=message_link)
+        if isinstance(source, commands.Context):
+            await source.send(content=context, embed=embed, view=view)
+        else:
+            await source.followup.send(content=context, embed=embed, view=view)
 
     async def generate_ai_context(self, message_content):
         """Generate a short AI context using OpenRouter API."""
@@ -82,7 +104,7 @@ class RandomPull(commands.Cog):
         api_key = random.choice([key for key in api_keys if key])
 
         if not api_key:
-            return "No AI context available (API key missing)."
+            return "🤖 No AI context available (API key missing)."
 
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
@@ -102,17 +124,24 @@ class RandomPull(commands.Cog):
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status == 200:
                         data = await response.json()
-                        return data["choices"][0]["message"]["content"].strip()
+                        return f"🤖 {data['choices'][0]['message']['content'].strip()}"
                     else:
                         error = await response.text()
-                        logging.error(f"OpenRouter API error: {error}")
-                        return "Failed to generate context."
-        except aiohttp.ClientError as e:
-            logging.error(f"Request failed: {e}")
-            return "Failed to generate context."
+                        logger.error(f"OpenRouter API error: {error}")
+                        return "🤖 Failed to generate context."
         except Exception as e:
-            logging.error(f"Unexpected error: {e}")
-            return "Failed to generate context."
+            logger.error(f"Unexpected error: {e}")
+            return "🤖 Failed to generate context."
+
+    def load_pulled_ids(self):
+        if not os.path.exists(LOG_FILE):
+            return set()
+        with open(LOG_FILE, "r") as f:
+            return set(json.load(f))
+
+    def save_pulled_ids(self):
+        with open(LOG_FILE, "w") as f:
+            json.dump(list(self.pulled_ids), f, indent=2)
 
 async def setup(bot):
     await bot.add_cog(RandomPull(bot))
