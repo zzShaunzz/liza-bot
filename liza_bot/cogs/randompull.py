@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands  # Required for hybrid commands
 import random
 import aiohttp
 import os
@@ -35,11 +36,9 @@ class RandomPull(commands.Cog):
         await self._run_random_pull(interaction)
 
     async def _run_random_pull(self, source):
-        # Fetch all text channels
         channels = list(source.guild.text_channels)
         random.shuffle(channels)
 
-        # Fetch a random message
         eligible_messages = []
         for channel in channels:
             try:
@@ -65,13 +64,10 @@ class RandomPull(commands.Cog):
         self.pulled_ids.add(str(pulled_message.id))
         self.save_pulled_ids()
 
-        # Generate AI context
         context = await self.generate_ai_context(pulled_message.content)
 
-        # Create message link
         message_link = f"https://discord.com/channels/{pulled_message.guild.id}/{pulled_message.channel.id}/{pulled_message.id}"
 
-        # Build embed
         embed = discord.Embed(
             title="🎲 Random Message Pull",
             description=(
@@ -84,7 +80,6 @@ class RandomPull(commands.Cog):
         )
         embed.set_footer(text="A random moment from the server...")
 
-        # Send response
         view = JumpToMessageView(url=message_link)
         if isinstance(source, commands.Context):
             await source.send(content=context, embed=embed, view=view)
@@ -92,7 +87,6 @@ class RandomPull(commands.Cog):
             await source.followup.send(content=context, embed=embed, view=view)
 
     async def generate_ai_context(self, message_content):
-        """Generate a short AI context using OpenRouter API."""
         api_keys = [
             os.getenv("OPENROUTER_API_KEY_1"),
             os.getenv("OPENROUTER_API_KEY_2"),
