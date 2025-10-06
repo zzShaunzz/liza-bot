@@ -3,9 +3,22 @@ from discord.ext import commands
 from discord import app_commands
 import re, random, requests, os
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load API keys
+OPENROUTER_API_KEYS = [
+    os.getenv("OPENROUTER_API_KEY_1"),
+    os.getenv("OPENROUTER_API_KEY_2"),
+    os.getenv("OPENROUTER_API_KEY_3"),
+    os.getenv("OPENROUTER_API_KEY_4"),
+    os.getenv("OPENROUTER_API_KEY_5"),
+    os.getenv("OPENROUTER_API_KEY_6"),
+]
+
 BOT_CHANNEL_ID = 1271294510164607008
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL_NAME = "google/gemini-2.5-flash-image-preview:free"
@@ -26,14 +39,13 @@ class LizaAI(commands.Cog):
             "Liza is wearing a blanket cape and declaring she's queen of snacks."
         ]
         scene = random.choice(moods)
-
         return (
             f"{scene}\n\n"
             f"Liza is a sweet 3-year-old toddler in the Muy household. She loves her siblings Gabe, Aiden, Vivian, Nico, and Ella, "
             f"and calls everyone else her cousin. She's innocent, giggly, and smart in toddler-surprising ways. Her speech is playful "
             f"and full of imagination.\n\n"
             f"Only respond when you're mentioned by name (\"Liza\") or pinged. Only reply in the channel meant for you.\n\n"
-            f"User {username} said: \"{message_content}\"\n\n"
+            f"User {username} said: \"{message.content}\"\n\n"
             f"Reply in a creative toddler voice using silly logic, giggles, and made-up words. Replies should feel spontaneous and different every time."
         )
 
@@ -47,14 +59,20 @@ class LizaAI(commands.Cog):
         if message.mention_everyone or self.bot.user in message.mentions or re.search(r"\bliza\b", message.content, re.IGNORECASE):
             print("🎯 Liza was mentioned!")
 
+            # Select a random API key
+            api_keys = [key for key in OPENROUTER_API_KEYS if key]
+            if not api_keys:
+                await message.channel.send("Liza's juice box is empty! No API keys found. 😢")
+                return
+
+            api_key = random.choice(api_keys)
+
             try:
                 prompt = self.liza_personality(message.content, message.author.display_name)
-
                 headers = {
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"
                 }
-
                 payload = {
                     "model": MODEL_NAME,
                     "messages": [{"role": "user", "content": prompt}],
@@ -70,10 +88,10 @@ class LizaAI(commands.Cog):
 
             except requests.exceptions.RequestException as e:
                 await message.channel.send("Liza spilled her juice and can't talk 😢")
-                print("Liza API Error:", getattr(e.response, "text", str(e)))
+                logger.error(f"Liza API Error: {getattr(e.response, 'text', str(e))}")
             except Exception as e:
                 await message.channel.send("Liza got tangled in her blanket and needs help! 🐻")
-                print("Unexpected error:", e)
+                logger.error(f"Unexpected error: {e}")
 
         await self.bot.process_commands(message)
 
