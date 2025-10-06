@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from discord import app_commands  # Required for hybrid commands
+from discord import app_commands
 import random
 import aiohttp
 import os
@@ -87,6 +87,7 @@ class RandomPull(commands.Cog):
             await source.followup.send(content=context, embed=embed, view=view)
 
     async def generate_ai_context(self, message_content):
+        """Generate a brief AI context using OpenRouter API."""
         api_keys = [
             os.getenv("OPENROUTER_API_KEY_1"),
             os.getenv("OPENROUTER_API_KEY_2"),
@@ -108,9 +109,12 @@ class RandomPull(commands.Cog):
         payload = {
             "model": "mistralai/mistral-7b-instruct",
             "messages": [
-                {"role": "user", "content": f"Summarize the following message in 10 words or less: '{message_content}'"}
+                {
+                    "role": "user",
+                    "content": f"Provide a brief context or summary of the following message: '{message_content}'. Keep it concise but complete."
+                }
             ],
-            "max_tokens": 10
+            "max_tokens": 30  # Allow for a slightly longer response
         }
 
         try:
