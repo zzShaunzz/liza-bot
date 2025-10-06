@@ -6,6 +6,11 @@ import re
 import json
 import os
 import random
+import aiohttp
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 print("[NostalgiaMediaCog] nostalgia_media.py was imported.")
 
@@ -15,7 +20,6 @@ ALLOWED_CHANNEL_ID = 1399117366926770267  # #bots-general
 EXCLUDED_CATEGORY_ID = 1265093508595843193
 EXCLUDED_CHANNEL_IDS = {1398892088984076368}  # starboard
 CONTEXT_TIME_WINDOW = datetime.timedelta(minutes=20)
-
 MEDIA_DOMAINS = [
     "drive.google.com", "photos.google.com", "imgur.com",
     "tenor.com", "giphy.com", "media.discordapp.net", "cdn.discordapp.com"
@@ -67,19 +71,16 @@ class NostalgiaMediaCog(commands.Cog):
     async def _run_nostalgia_media(self, source, media_type=None):
         six_months_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=182)
         eligible_messages = []
-
         channels = [
             ch for ch in source.guild.text_channels
             if ch.category_id != EXCLUDED_CATEGORY_ID and ch.id not in EXCLUDED_CHANNEL_IDS
         ]
         random.shuffle(channels)
         scanned_channels = 0
-
         for channel in channels:
             if scanned_channels >= MAX_CHANNELS:
                 break
             scanned_channels += 1
-
             try:
                 async for msg in channel.history(oldest_first=True):
                     if (
@@ -91,7 +92,6 @@ class NostalgiaMediaCog(commands.Cog):
                         eligible_messages.append(msg)
             except discord.Forbidden:
                 continue
-
         if not eligible_messages:
             response = "😔 Couldn't find any media messages older than 6 months."
             if isinstance(source, commands.Context):
@@ -99,10 +99,12 @@ class NostalgiaMediaCog(commands.Cog):
             else:
                 await source.followup.send(response)
             return
-
         pulled_message = random.choice(eligible_messages)
         self.pulled_ids.add(str(pulled_message.id))
         self.save_pulled_ids()
+
+        # Generate AI context
+        context = await self.generate_ai_context(pulled_message.content)
 
         context_messages = []
         try:
@@ -117,9 +119,7 @@ class NostalgiaMediaCog(commands.Cog):
         except discord.Forbidden:
             pass
 
-        context_summary = self.generate_context(pulled_message, context_messages)
         message_link = f"https://discord.com/channels/{pulled_message.guild.id}/{pulled_message.channel.id}/{pulled_message.id}"
-
         embed = discord.Embed(
             title="🎞️ Nostalgia Media Pull",
             description=(
@@ -139,7 +139,6 @@ class NostalgiaMediaCog(commands.Cog):
             elif first_attachment.content_type and "video" in first_attachment.content_type:
                 video_url = first_attachment.url
                 if media_type == "video":
-                    # Send video visually so Discord renders it inline
                     if isinstance(source, commands.Context):
                         await source.send(video_url)
                     else:
@@ -152,11 +151,52 @@ class NostalgiaMediaCog(commands.Cog):
                     break
 
         view = JumpToMessageView(url=message_link)
-
         if isinstance(source, commands.Context):
-            await source.send(content=context_summary, embed=embed, view=view)
+            await source.send(content=context, embed=embed, view=view)
         else:
-            await source.followup.send(content=context_summary, embed=embed, view=view)
+            await source.followup.send(content=context, embed=embed, view=view)
+
+    async def generate_ai_context(self, message_content):
+        """Generate a short AI context using OpenRouter API."""
+        api_keys = [
+            os.getenv("OPENROUTER_API_KEY_1"),
+            os.getenv("OPENROUTER_API_KEY_2"),
+            os.getenv("OPENROUTER_API_KEY_3"),
+            os.getenv("OPENROUTER_API_KEY_4"),
+            os.getenv("OPENROUTER_API_KEY_5"),
+            os.getenv("OPENROUTER_API_KEY_6"),
+        ]
+        api_key = random.choice([key for key in api_keys if key])
+
+        if not api_key:
+            return "🤖 No AI context available (API key missing)."
+
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "mistralai/mistral-7b-instruct",
+            "messages": [
+                {"role": "user", "content": f"Summarize the following message in 10 words or less: '{message_content}'"}
+            ],
+            "max_tokens": 10
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return f"🤖 {data['choices'][0]['message']['content'].strip()}"
+                    else:
+                        error = await response.text()
+                        logger.error(f"OpenRouter API error: {error}")
+                        return "🤖 Failed to generate context."
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            return "🤖 Failed to generate context."
 
     def contains_media(self, msg: discord.Message, media_type=None) -> bool:
         if media_type == "video":
@@ -171,35 +211,6 @@ class NostalgiaMediaCog(commands.Cog):
             urls = re.findall(r"https?://\S+", msg.content)
             return any(domain in url for url in urls for domain in MEDIA_DOMAINS)
 
-    def generate_context(self, message: discord.Message, surrounding: list[discord.Message]) -> str:
-        author = message.author.display_name
-        participants = {msg.author.display_name for msg in surrounding if msg.author != message.author}
-        keywords = []
-
-        for msg in surrounding:
-            cleaned = re.sub(r"<a?:\w+:\d+>", "", msg.content)
-            cleaned = re.sub(r"https?://\S+", "", cleaned)
-            cleaned = re.sub(r"<@\d+>", "", cleaned)
-            cleaned = re.sub(r"\b\d{6,}\b", "", cleaned)
-            words = re.findall(r"\b\w+\b", cleaned.lower())
-            keywords.extend([w for w in words if len(w) > 3])
-
-        keyword_freq = {}
-        for word in keywords:
-            keyword_freq[word] = keyword_freq.get(word, 0) + 1
-
-        top_keywords = sorted(keyword_freq.items(), key=lambda x: x[1], reverse=True)[:3]
-        topic = ", ".join([kw for kw, _ in top_keywords])
-
-        if participants and topic:
-            return f"🧠 Around this time, {author} was sharing media with {', '.join(participants)} about {topic}."
-        elif participants:
-            return f"🧠 {author} was part of a media exchange with {', '.join(participants)}."
-        elif topic:
-            return f"📸 This media message from {author} was part of a moment focused on {topic}."
-        else:
-            return f"📸 A quiet media moment from {author}, with little else around it."
-
     def load_pulled_ids(self) -> set[str]:
         if not os.path.exists(LOG_FILE):
             return set()
@@ -210,6 +221,5 @@ class NostalgiaMediaCog(commands.Cog):
         with open(LOG_FILE, "w") as f:
             json.dump(list(self.pulled_ids), f, indent=2)
 
-# Required setup function for loading the cog
 async def setup(bot: commands.Bot):
     await bot.add_cog(NostalgiaMediaCog(bot))
