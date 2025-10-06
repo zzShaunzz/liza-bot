@@ -21,7 +21,7 @@ OPENROUTER_API_KEYS = [
 
 BOT_CHANNEL_ID = 1271294510164607008
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL_NAME = "google/gemini-2.5-flash-image-preview:free"
+MODEL = os.getenv("MODEL")
 
 class LizaAI(commands.Cog):
     def __init__(self, bot):
@@ -74,7 +74,7 @@ class LizaAI(commands.Cog):
                     "Content-Type": "application/json"
                 }
                 payload = {
-                    "model": MODEL_NAME,
+                    "model": MODEL,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 1.3,
                     "top_p": 0.9,
