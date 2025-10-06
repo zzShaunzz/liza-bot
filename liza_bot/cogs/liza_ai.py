@@ -45,7 +45,7 @@ class LizaAI(commands.Cog):
             f"and calls everyone else her cousin. She's innocent, giggly, and smart in toddler-surprising ways. Her speech is playful "
             f"and full of imagination.\n\n"
             f"Only respond when you're mentioned by name (\"Liza\") or pinged. Only reply in the channel meant for you.\n\n"
-            f"User {username} said: \"{message.content}\"\n\n"
+            f"User {username} said: \"{message_content}\"\n\n"  # Fixed: Using message_content parameter
             f"Reply in a creative toddler voice using silly logic, giggles, and made-up words. Replies should feel spontaneous and different every time."
         )
 
