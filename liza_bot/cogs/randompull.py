@@ -3,18 +3,26 @@ from discord.ext import commands
 import random
 import aiohttp
 import os
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 class RandomPull(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="randompull", description="Pulls a random message from the server and provides AI-generated context.")
+    @commands.hybrid_command(
+        name="randompull",
+        description="Pulls a random message from the server and provides AI-generated context."
+    )
     async def random_pull(self, ctx):
-        await ctx.defer()  # Defer response to avoid timeout
+        await ctx.defer()
 
-        # Fetch all text channels in the server
-        channels = [channel for channel in ctx.guild.text_channels if channel.permissions_for(ctx.me).read_messages]
-
+        # Fetch all accessible text channels
+        channels = [
+            channel for channel in ctx.guild.text_channels
+            if channel.permissions_for(ctx.me).read_messages
+        ]
         if not channels:
             await ctx.send("No accessible text channels found in this server.")
             return
@@ -23,25 +31,31 @@ class RandomPull(commands.Cog):
         channel = random.choice(channels)
 
         try:
-            # Fetch messages from the channel (limit to 100 for performance)
+            # Fetch up to 100 messages
             messages = [msg async for msg in channel.history(limit=100)]
             if not messages:
                 await ctx.send(f"No messages found in {channel.mention}.")
                 return
 
-            # Select a random message
+            # Select a random message with text content
             message = random.choice(messages)
+            if not message.content:
+                await ctx.send("Selected message has no text content.")
+                return
 
-            # Generate AI context using OpenRouter
+            # Generate AI context
             context = await self.generate_ai_context(message.content)
-
-            # Create a jump URL
             jump_url = message.jump_url
 
-            # Construct the response
+            # Build and send embed
             embed = discord.Embed(
                 title="Random Message Pull",
-                description=f"**Message:** {message.content}\n**Channel:** {channel.mention}\n**Author:** {message.author.mention}\n**Sent at:** {message.created_at.strftime('%Y-%m-%d %H:%M:%S')}",
+                description=(
+                    f"**Message:** {message.content}\n"
+                    f"**Channel:** {channel.mention}\n"
+                    f"**Author:** {message.author.mention}\n"
+                    f"**Sent at:** {message.created_at.strftime('%Y-%m-%d %H:%M:%S')}"
+                ),
                 color=discord.Color.random()
             )
             embed.add_field(name="AI Context", value=context, inline=False)
@@ -52,6 +66,7 @@ class RandomPull(commands.Cog):
         except discord.Forbidden:
             await ctx.send(f"I don't have permission to read messages in {channel.mention}.")
         except Exception as e:
+            logging.error(f"Error in random_pull: {e}")
             await ctx.send(f"An error occurred: {e}")
 
     async def generate_ai_context(self, message_content):
@@ -89,8 +104,14 @@ class RandomPull(commands.Cog):
                         data = await response.json()
                         return data["choices"][0]["message"]["content"].strip()
                     else:
+                        error = await response.text()
+                        logging.error(f"OpenRouter API error: {error}")
                         return "Failed to generate context."
-        except Exception:
+        except aiohttp.ClientError as e:
+            logging.error(f"Request failed: {e}")
+            return "Failed to generate context."
+        except Exception as e:
+            logging.error(f"Unexpected error: {e}")
             return "Failed to generate context."
 
 async def setup(bot):
