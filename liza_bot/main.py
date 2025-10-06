@@ -242,6 +242,7 @@ async def load_cogs(bot: commands.Bot):
         "cogs.nostalgia_pull",
         "cogs.nostalgia_media",
         "cogs.zombie_game",
+        "cogs.randompull",
     ]
 
     for cog in cogs_to_load:
