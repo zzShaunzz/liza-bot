@@ -20,7 +20,6 @@ MAX_CHANNELS = 25
 MEDIA_LOG_FILE = "messagepull_media_log.json"
 TEXT_LOG_FILE = "messagepull_text_log.json"
 RANDOM_LOG_FILE = "messagepull_random_log.json"
-ALLOWED_CHANNEL_ID = 1399117366926770267  # #bots-general
 EXCLUDED_CATEGORY_ID = 1265093508595843193
 EXCLUDED_CHANNEL_IDS = {1398892088984076368}  # starboard
 CONTEXT_TIME_WINDOW = datetime.timedelta(minutes=20)
@@ -170,13 +169,6 @@ class MessagePullCog(commands.Cog):
     @app_commands.command(name="messagepull", description="Pull a message from the server based on your preferences.")
     async def messagepull_slash(self, interaction: discord.Interaction):
         """Main slash command for message pulling."""
-        if interaction.channel.id != ALLOWED_CHANNEL_ID:
-            await interaction.response.send_message(
-                "❌ This command can only be used in <#1399117366926770267>.", 
-                ephemeral=True
-            )
-            return
-        
         # Create dropdown for pull type
         class PullTypeSelect(discord.ui.Select):
             def __init__(self):
@@ -392,15 +384,97 @@ class MessagePullCog(commands.Cog):
         view = JumpToMessageView(url=message_link)
         await interaction.followup.send(embed=embed, view=view)
 
-    # Prefix commands for backward compatibility
+    # Legacy prefix commands for direct access
     @commands.command(name="messagepull")
     async def messagepull_prefix(self, ctx: commands.Context):
-        """Prefix command version that redirects to slash command instructions."""
-        if ctx.channel.id != ALLOWED_CHANNEL_ID:
-            await ctx.send("❌ This command can only be used in <#1399117366926770267>.")
-            return
+        """Prefix command for message pulling - provides options."""
+        await ctx.send("Please use the slash command `/messagepull` for interactive message pulling with all options.")
+
+    @commands.command(name="mediapull")
+    async def mediapull_prefix(self, ctx: commands.Context, months_back: Optional[int] = 6, media_type: str = "any"):
+        """Pull media messages from the past.
         
-        await ctx.send("Please use the slash command `/messagepull` for interactive message pulling.")
+        Usage: !mediapull [months_back] [media_type]
+        Example: !mediapull 3 video
+        """
+        async with ctx.typing():
+            pull_type = "media"
+            date_range = "month"
+            
+            if media_type.lower() == "video":
+                media_type = "video"
+            else:
+                media_type = None
+            
+            # Create a fake interaction for the execute_pull method
+            class FakeInteraction:
+                def __init__(self, ctx):
+                    self.guild = ctx.guild
+                    self.followup = self
+                    self.response = self
+                    self.user = ctx.author
+                
+                async def send(self, *args, **kwargs):
+                    return await ctx.send(*args, **kwargs)
+                
+                async def defer(self, **kwargs):
+                    pass
+            
+            fake_interaction = FakeInteraction(ctx)
+            await self.execute_pull(fake_interaction, pull_type, date_range, months_back, media_type)
+
+    @commands.command(name="textpull")
+    async def textpull_prefix(self, ctx: commands.Context, months_back: Optional[int] = 12):
+        """Pull text messages from the past.
+        
+        Usage: !textpull [months_back]
+        Example: !textpull 3
+        """
+        async with ctx.typing():
+            pull_type = "text"
+            date_range = "month"
+            
+            class FakeInteraction:
+                def __init__(self, ctx):
+                    self.guild = ctx.guild
+                    self.followup = self
+                    self.response = self
+                    self.user = ctx.author
+                
+                async def send(self, *args, **kwargs):
+                    return await ctx.send(*args, **kwargs)
+                
+                async def defer(self, **kwargs):
+                    pass
+            
+            fake_interaction = FakeInteraction(ctx)
+            await self.execute_pull(fake_interaction, pull_type, date_range, months_back, None)
+
+    @commands.command(name="randompull")
+    async def randompull_prefix(self, ctx: commands.Context):
+        """Pull a completely random message from the server.
+        
+        Usage: !randompull
+        """
+        async with ctx.typing():
+            pull_type = "random"
+            date_range = "any"
+            
+            class FakeInteraction:
+                def __init__(self, ctx):
+                    self.guild = ctx.guild
+                    self.followup = self
+                    self.response = self
+                    self.user = ctx.author
+                
+                async def send(self, *args, **kwargs):
+                    return await ctx.send(*args, **kwargs)
+                
+                async def defer(self, **kwargs):
+                    pass
+            
+            fake_interaction = FakeInteraction(ctx)
+            await self.execute_pull(fake_interaction, pull_type, date_range, None, None)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(MessagePullCog(bot))
