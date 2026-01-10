@@ -92,7 +92,8 @@ class MessagePullCog(commands.Cog):
 
     async def find_messages(self, source, pull_type: str, date_range: str, 
                            months_back: Optional[int] = None, 
-                           media_type: Optional[str] = None) -> Tuple[Optional[discord.Message], Optional[set], Optional[str]]:
+                           media_type: Optional[str] = None,
+                           target_user: Optional[discord.Member] = None) -> Tuple[Optional[discord.Message], Optional[set], Optional[str]]:
         """Find messages based on criteria."""
         # Calculate the date threshold
         date_threshold = await self.get_date_threshold(date_range, months_back)
@@ -142,6 +143,10 @@ class MessagePullCog(commands.Cog):
                     if str(msg.id) in pulled_ids:
                         continue
                     
+                    # Check if message is from target user (if specified)
+                    if target_user and msg.author.id != target_user.id:
+                        continue
+                    
                     # Check message content based on pull type
                     if pull_type == "text":
                         if not msg.content or msg.content.strip() == "":
@@ -187,8 +192,65 @@ class MessagePullCog(commands.Cog):
                 user_id = self.ctx.author.id
                 self.cog.active_sessions[user_id] = {"pull_type": pull_type}
             
+            # Create dropdown for user selection
+            user_select = self.cog.UserSelect(self.cog, pull_type, self.is_prefix, self.ctx)
+            
+            # Create view for user selection
+            user_view = discord.ui.View()
+            user_view.add_item(user_select)
+            
+            await interaction.followup.send(
+                "Choose who you want to pull a message from:", 
+                view=user_view, 
+                ephemeral=True
+            )
+
+    class UserSelect(discord.ui.Select):
+        def __init__(self, cog_instance, pull_type: str, is_prefix=False, ctx=None):
+            options = [
+                discord.SelectOption(label="Random User", value="random", description="Any user in the server"),
+                discord.SelectOption(label="Myself", value="self", description="Pull your own messages"),
+                discord.SelectOption(label="Specific User...", value="specific", description="Choose a specific user")
+            ]
+            super().__init__(placeholder="Choose who to pull from...", options=options)
+            self.cog = cog_instance
+            self.pull_type = pull_type
+            self.is_prefix = is_prefix
+            self.ctx = ctx
+        
+        async def callback(self, interaction: discord.Interaction):
+            user_choice = self.values[0]
+            target_user = None
+            
+            if user_choice == "self":
+                target_user = interaction.user
+            elif user_choice == "specific":
+                await interaction.response.send_message(
+                    "Please mention the user you want to pull messages from (e.g., @username):",
+                    ephemeral=True
+                )
+                
+                def check(m):
+                    return m.author == interaction.user and m.channel == interaction.channel
+                
+                try:
+                    msg = await self.cog.bot.wait_for('message', timeout=30.0, check=check)
+                    # Extract user mentions
+                    if msg.mentions:
+                        target_user = msg.mentions[0]
+                    else:
+                        await interaction.followup.send("No user mentioned. Using random user.", ephemeral=True)
+                except TimeoutError:
+                    await interaction.followup.send("Timed out. Using random user.", ephemeral=True)
+            
+            # Store target user in session
+            if self.is_prefix and self.ctx:
+                user_id = self.ctx.author.id
+                if user_id in self.cog.active_sessions:
+                    self.cog.active_sessions[user_id]["target_user"] = target_user
+            
             # Create dropdown for date range
-            date_select = self.cog.DateRangeSelect(self.cog, pull_type, self.is_prefix, self.ctx)
+            date_select = self.cog.DateRangeSelect(self.cog, self.pull_type, target_user, self.is_prefix, self.ctx)
             
             # Create view for date range selection
             date_view = discord.ui.View()
@@ -201,7 +263,7 @@ class MessagePullCog(commands.Cog):
             )
 
     class DateRangeSelect(discord.ui.Select):
-        def __init__(self, cog_instance, pull_type: str, is_prefix=False, ctx=None):
+        def __init__(self, cog_instance, pull_type: str, target_user: Optional[discord.Member], is_prefix=False, ctx=None):
             options = [
                 discord.SelectOption(label="Older than a week", value="week"),
                 discord.SelectOption(label="Older than a month", value="month"),
@@ -214,6 +276,7 @@ class MessagePullCog(commands.Cog):
             super().__init__(placeholder="Choose date range...", options=options)
             self.cog = cog_instance
             self.pull_type = pull_type
+            self.target_user = target_user
             self.is_prefix = is_prefix
             self.ctx = ctx
         
@@ -221,7 +284,7 @@ class MessagePullCog(commands.Cog):
             date_range = self.values[0]
             months_back = None
             
-            # If month is selected, ask for number of months
+            # If month is selected, ask for number of months (except for random pulls)
             if date_range == "month" and self.pull_type != "random":
                 await interaction.response.send_message(
                     "How many months back would you like to pull from? (Enter a number, e.g., 3 for 3 months):",
@@ -246,14 +309,17 @@ class MessagePullCog(commands.Cog):
                     await interaction.followup.send("Timed out. Using default of 1 month.", ephemeral=True)
                     months_back = 1
             
-            # For random pulls, set date_range to None
+            # For random pulls, set date_range to "any"
             if self.pull_type == "random":
                 date_range = "any"
             
             # If media pull, ask for media type
             media_type = None
             if self.pull_type == "media":
-                media_select = self.cog.MediaTypeSelect(self.cog, self.pull_type, date_range, months_back, self.is_prefix, self.ctx)
+                media_select = self.cog.MediaTypeSelect(
+                    self.cog, self.pull_type, date_range, months_back, 
+                    self.target_user, self.is_prefix, self.ctx
+                )
                 
                 view = discord.ui.View()
                 view.add_item(media_select)
@@ -276,7 +342,8 @@ class MessagePullCog(commands.Cog):
                     self.cog.active_sessions[user_id].update({
                         "date_range": date_range,
                         "months_back": months_back,
-                        "media_type": media_type
+                        "media_type": None,
+                        "target_user": self.target_user
                     })
                 
                 # Create a fake interaction for prefix command
@@ -315,7 +382,8 @@ class MessagePullCog(commands.Cog):
                     self.pull_type, 
                     date_range, 
                     months_back, 
-                    media_type
+                    None,
+                    self.target_user
                 )
                 
                 # Clean up session
@@ -328,11 +396,13 @@ class MessagePullCog(commands.Cog):
                     self.pull_type, 
                     date_range, 
                     months_back, 
-                    media_type
+                    None,
+                    self.target_user
                 )
 
     class MediaTypeSelect(discord.ui.Select):
-        def __init__(self, cog_instance, pull_type: str, date_range: str, months_back: Optional[int], is_prefix=False, ctx=None):
+        def __init__(self, cog_instance, pull_type: str, date_range: str, months_back: Optional[int], 
+                    target_user: Optional[discord.Member], is_prefix=False, ctx=None):
             options = [
                 discord.SelectOption(label="Any Media", value="any", description="Images, videos, etc."),
                 discord.SelectOption(label="Video Only", value="video", description="Videos only")
@@ -342,6 +412,7 @@ class MessagePullCog(commands.Cog):
             self.pull_type = pull_type
             self.date_range = date_range
             self.months_back = months_back
+            self.target_user = target_user
             self.is_prefix = is_prefix
             self.ctx = ctx
         
@@ -397,7 +468,8 @@ class MessagePullCog(commands.Cog):
                     self.pull_type, 
                     self.date_range, 
                     self.months_back, 
-                    media_type
+                    media_type,
+                    self.target_user
                 )
                 
                 # Clean up session
@@ -411,7 +483,8 @@ class MessagePullCog(commands.Cog):
                     self.pull_type, 
                     self.date_range, 
                     self.months_back, 
-                    media_type
+                    media_type,
+                    self.target_user
                 )
 
     @app_commands.command(name="messagepull", description="Pull a message from the server based on your preferences.")
@@ -421,6 +494,7 @@ class MessagePullCog(commands.Cog):
         view = discord.ui.View()
         view.add_item(self.PullTypeSelect(self, is_prefix=False))
         
+        # FIX: Only send one response
         await interaction.response.send_message(
             "Welcome to Message Pull! What type of message would you like to pull?",
             view=view,
@@ -447,11 +521,12 @@ class MessagePullCog(commands.Cog):
 
     async def execute_pull(self, interaction: discord.Interaction, pull_type: str, 
                           date_range: str, months_back: Optional[int] = None,
-                          media_type: Optional[str] = None):
+                          media_type: Optional[str] = None,
+                          target_user: Optional[discord.Member] = None):
         """Execute the actual message pull."""
         # Find a message
         pulled_message, pulled_ids, log_file = await self.find_messages(
-            interaction, pull_type, date_range, months_back, media_type
+            interaction, pull_type, date_range, months_back, media_type, target_user
         )
         
         if not pulled_message:
@@ -537,10 +612,11 @@ class MessagePullCog(commands.Cog):
         
         view = JumpToMessageView(url=message_link)
         
-        # Send the embed
+        # Send the embed - FIX: Only send once
         if hasattr(interaction_or_ctx, 'followup_send'):
+            # Use followup.send() only once
             await interaction_or_ctx.followup_send(embed=embed, view=view)
-        else:
+        elif hasattr(interaction_or_ctx, 'send'):
             await interaction_or_ctx.send(embed=embed, view=view)
 
     # Direct prefix commands for quick access (existing functionality)
