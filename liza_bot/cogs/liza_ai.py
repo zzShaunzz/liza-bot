@@ -22,13 +22,24 @@ OPENROUTER_API_KEYS = [
 BOT_CHANNEL_ID = 1271294510164607008  # Original Liza channel
 COMMAND_CHANNEL_ID = 1451423055426355220  # New channel for !lizaai command
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL = os.getenv("MODEL", "anthropic/claude-3.5-sonnet")  # Add default model
+# Default to a reliable model that works on OpenRouter
+MODEL = os.getenv("MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+
+# List of reliable free models on OpenRouter
+RELIABLE_MODELS = [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemma-2-9b-it:free",
+    "microsoft/phi-3.5-mini-instruct:free",
+    "qwen/qwen-2.5-32b-instruct:free",
+    "mistralai/mistral-7b-instruct:free"
+]
 
 class LizaAI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         print("[LizaAI] Cog initialized!")
         print(f"[LizaAI] Listening in channels: {BOT_CHANNEL_ID} (mentions) and {COMMAND_CHANNEL_ID} (!lizaai)")
+        print(f"[LizaAI] Using model: {MODEL}")
 
     def liza_personality(self, message_content, username):
         moods = [
@@ -65,9 +76,6 @@ class LizaAI(commands.Cog):
                 print("🎯 Liza was mentioned in her channel!")
                 await self.generate_liza_response(message)
         
-        # FIX: Don't handle commands in on_message - let the command handler do it
-        # The command decorator will handle !lizaai commands
-
         await self.bot.process_commands(message)
 
     async def generate_liza_response(self, message):
@@ -89,34 +97,56 @@ class LizaAI(commands.Cog):
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://discord.com",  # OpenRouter requires this
-                "X-Title": "Liza Toddler Bot"  # OpenRouter requires this
-            }
-            payload = {
-                "model": MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 1.3,
-                "top_p": 0.9,
-                "max_tokens": 140
+                "HTTP-Referer": "https://discord.com",
+                "X-Title": "Liza Toddler Bot"
             }
             
-            print(f"🚀 Sending request to OpenRouter...")
-            print(f"📦 Model: {MODEL}")
+            # Try the configured model first, then fall back to reliable models
+            models_to_try = [MODEL] + RELIABLE_MODELS
             
-            response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
-            print(f"📡 Response status: {response.status_code}")
-            
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            if "choices" in data and len(data["choices"]) > 0:
-                liza_reply = data["choices"][0]["message"]["content"].strip()
-                print(f"💬 Liza's reply: {liza_reply}")
-                await message.channel.send(liza_reply)
-            else:
-                print(f"❌ No choices in response: {data}")
-                await message.channel.send("Liza got confused and started babbling nonsense! 🍼")
+            for model_to_try in models_to_try:
+                try:
+                    print(f"🤖 Trying model: {model_to_try}")
+                    
+                    payload = {
+                        "model": model_to_try,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 1.3,
+                        "top_p": 0.9,
+                        "max_tokens": 140
+                    }
+                    
+                    print(f"🚀 Sending request to OpenRouter with model: {model_to_try}")
+                    
+                    response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
+                    print(f"📡 Response status: {response.status_code}")
+                    
+                    if response.status_code == 404:
+                        print(f"❌ Model {model_to_try} not found, trying next...")
+                        continue
+                    
+                    response.raise_for_status()
+                    
+                    data = response.json()
+                    
+                    if "choices" in data and len(data["choices"]) > 0:
+                        liza_reply = data["choices"][0]["message"]["content"].strip()
+                        print(f"💬 Liza's reply: {liza_reply}")
+                        await message.channel.send(liza_reply)
+                        return  # Success, exit the loop
+                    else:
+                        print(f"❌ No choices in response: {data}")
+                        break  # Exit loop if no choices
+                        
+                except requests.exceptions.HTTPError as e:
+                    if e.response.status_code == 404:
+                        print(f"❌ Model {model_to_try} not found (404)")
+                        continue  # Try next model
+                    else:
+                        raise  # Re-raise other HTTP errors
+                        
+            # If we get here, all models failed or no choices
+            await message.channel.send("Liza got confused and started babbling nonsense! 🍼")
                 
         except requests.exceptions.Timeout:
             print("⏰ Request timed out!")
@@ -124,18 +154,25 @@ class LizaAI(commands.Cog):
         except requests.exceptions.HTTPError as e:
             print(f"❌ HTTP Error: {e}")
             if hasattr(e, 'response') and e.response:
+                error_text = e.response.text[:100] if e.response.text else "No error text"
+                print(f"❌ Error details: {error_text}")
+                
                 if e.response.status_code == 401:
                     await message.channel.send("Liza's juice box key doesn't work! (Invalid API key) 🔑")
                 elif e.response.status_code == 429:
                     await message.channel.send("Liza drank too much juice too fast! (Rate limited) 🚰")
                 elif e.response.status_code == 400:
                     await message.channel.send("Liza mixed up her words! (Bad request) 🤪")
+                elif e.response.status_code == 404:
+                    await message.channel.send("Liza can't find her favorite toy! (Model not found) 🧸")
                 else:
                     await message.channel.send(f"Liza spilled her juice! (Error {e.response.status_code}) 😢")
             else:
                 await message.channel.send("Liza spilled her juice and can't talk 😢")
         except Exception as e:
             print(f"❌ Unexpected error: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             await message.channel.send("Liza got tangled in her blanket and needs help! 🐻")
 
     @app_commands.command(name="response", description="Check if Liza is listening in her channel")
@@ -168,8 +205,10 @@ class LizaAI(commands.Cog):
                     "HTTP-Referer": "https://discord.com",
                     "X-Title": "Liza Toddler Bot"
                 }
+                
+                # Test with a reliable model
                 test_payload = {
-                    "model": MODEL,
+                    "model": "meta-llama/llama-3.3-70b-instruct:free",
                     "messages": [{"role": "user", "content": "Say 'Hello Liza!'"}],
                     "max_tokens": 10
                 }
@@ -217,24 +256,42 @@ class LizaAI(commands.Cog):
                     "HTTP-Referer": "https://discord.com",
                     "X-Title": "Liza Toddler Bot"
                 }
-                payload = {
-                    "model": MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 1.3,
-                    "top_p": 0.9,
-                    "max_tokens": 140
-                }
                 
-                response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
-                response.raise_for_status()
+                # Try models in order
+                models_to_try = [MODEL] + RELIABLE_MODELS
                 
-                data = response.json()
+                for model_to_try in models_to_try:
+                    try:
+                        payload = {
+                            "model": model_to_try,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "temperature": 1.3,
+                            "top_p": 0.9,
+                            "max_tokens": 140
+                        }
+                        
+                        response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
+                        
+                        if response.status_code == 404:
+                            continue  # Try next model
+                        
+                        response.raise_for_status()
+                        
+                        data = response.json()
+                        
+                        if "choices" in data and len(data["choices"]) > 0:
+                            liza_reply = data["choices"][0]["message"]["content"].strip()
+                            await ctx.send(liza_reply)
+                            return
+                            
+                    except requests.exceptions.HTTPError as e:
+                        if e.response and e.response.status_code == 404:
+                            continue  # Try next model
+                        else:
+                            raise  # Re-raise other errors
                 
-                if "choices" in data and len(data["choices"]) > 0:
-                    liza_reply = data["choices"][0]["message"]["content"].strip()
-                    await ctx.send(liza_reply)
-                else:
-                    await ctx.send("Liza got confused and started babbling nonsense! 🍼")
+                # If we get here, all models failed
+                await ctx.send("Liza got confused and started babbling nonsense! 🍼")
                     
             except requests.exceptions.Timeout:
                 await ctx.send("Liza got distracted by a butterfly and forgot what she was saying! 🦋")
@@ -244,6 +301,8 @@ class LizaAI(commands.Cog):
                         await ctx.send("Liza's juice box key doesn't work! (Invalid API key) 🔑")
                     elif e.response.status_code == 429:
                         await ctx.send("Liza drank too much juice too fast! (Rate limited) 🚰")
+                    elif e.response.status_code == 404:
+                        await ctx.send("Liza can't find her favorite toy! (Model not found) 🧸")
                     else:
                         await ctx.send("Liza spilled her juice! 😢")
                 else:
@@ -251,6 +310,20 @@ class LizaAI(commands.Cog):
             except Exception as e:
                 print(f"❌ Error in !lizaai command: {e}")
                 await ctx.send("Liza got tangled in her blanket and needs help! 🐻")
+
+    @commands.command(name="lizamodels")
+    async def liza_models(self, ctx):
+        """Show available models for Liza"""
+        await ctx.send(
+            "🍭 **Liza's Available Models:**\n"
+            f"• Current: `{MODEL}`\n"
+            "• Reliable backups:\n"
+            "  - `meta-llama/llama-3.3-70b-instruct:free`\n"
+            "  - `google/gemma-2-9b-it:free`\n"
+            "  - `microsoft/phi-3.5-mini-instruct:free`\n"
+            "  - `qwen/qwen-2.5-32b-instruct:free`\n"
+            "  - `mistralai/mistral-7b-instruct:free`"
+        )
 
 async def setup(bot):
     await bot.add_cog(LizaAI(bot))
