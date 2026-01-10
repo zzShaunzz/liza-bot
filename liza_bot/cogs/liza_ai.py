@@ -65,10 +65,8 @@ class LizaAI(commands.Cog):
                 print("🎯 Liza was mentioned in her channel!")
                 await self.generate_liza_response(message)
         
-        # Handle !lizaai command in the command channel
-        elif message.channel.id == COMMAND_CHANNEL_ID and message.content.startswith("!lizaai"):
-            print(f"📨 !lizaai command received in channel {message.channel.id}: {message.content}")
-            await self.handle_lizaai_command(message)
+        # FIX: Don't handle commands in on_message - let the command handler do it
+        # The command decorator will handle !lizaai commands
 
         await self.bot.process_commands(message)
 
@@ -140,76 +138,6 @@ class LizaAI(commands.Cog):
             print(f"❌ Unexpected error: {type(e).__name__}: {e}")
             await message.channel.send("Liza got tangled in her blanket and needs help! 🐻")
 
-    async def handle_lizaai_command(self, message):
-        """Handle the !lizaai command in the command channel"""
-        # Extract the user's message after the command
-        command_parts = message.content.split(" ", 1)
-        if len(command_parts) < 2:
-            await message.channel.send("Heehee! Liza needs something to giggle about! Try: `!lizaai [your message]` 🍭")
-            return
-        
-        user_message = command_parts[1].strip()
-        if not user_message:
-            await message.channel.send("Heehee! Liza heard whispers but no words! Say something fun! 🎈")
-            return
-        
-        print(f"💬 Processing !lizaai command with message: {user_message}")
-        
-        # Show typing indicator
-        async with message.channel.typing():
-            # Select a random API key
-            api_keys = [key for key in OPENROUTER_API_KEYS if key]
-            if not api_keys:
-                await message.channel.send("Liza's juice box is empty! No API keys found. 😢")
-                return
-
-            api_key = random.choice(api_keys)
-            
-            try:
-                # Create a prompt for the command channel
-                prompt = self.liza_personality(user_message, message.author.display_name)
-                
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://discord.com",
-                    "X-Title": "Liza Toddler Bot"
-                }
-                payload = {
-                    "model": MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 1.3,
-                    "top_p": 0.9,
-                    "max_tokens": 140
-                }
-                
-                response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
-                response.raise_for_status()
-                
-                data = response.json()
-                
-                if "choices" in data and len(data["choices"]) > 0:
-                    liza_reply = data["choices"][0]["message"]["content"].strip()
-                    await message.channel.send(liza_reply)
-                else:
-                    await message.channel.send("Liza got confused and started babbling nonsense! 🍼")
-                    
-            except requests.exceptions.Timeout:
-                await message.channel.send("Liza got distracted by a butterfly and forgot what she was saying! 🦋")
-            except requests.exceptions.HTTPError as e:
-                if hasattr(e, 'response') and e.response:
-                    if e.response.status_code == 401:
-                        await message.channel.send("Liza's juice box key doesn't work! (Invalid API key) 🔑")
-                    elif e.response.status_code == 429:
-                        await message.channel.send("Liza drank too much juice too fast! (Rate limited) 🚰")
-                    else:
-                        await message.channel.send("Liza spilled her juice! 😢")
-                else:
-                    await message.channel.send("Liza spilled her juice and can't talk 😢")
-            except Exception as e:
-                print(f"❌ Error in !lizaai command: {e}")
-                await message.channel.send("Liza got tangled in her blanket and needs help! 🐻")
-
     @app_commands.command(name="response", description="Check if Liza is listening in her channel")
     async def response(self, interaction: discord.Interaction):
         if interaction.channel.id != BOT_CHANNEL_ID:
@@ -255,23 +183,74 @@ class LizaAI(commands.Cog):
                 await ctx.send(f"❌ Juice box test error: {e}")
 
     @commands.command(name="lizaai", aliases=["liza"])
-    async def lizaai_command(self, ctx, *, message: str):
+    async def lizaai_command(self, ctx, *, message: str = None):
         """Talk to Liza AI with a command"""
         # Check if we're in the allowed channel
         if ctx.channel.id != COMMAND_CHANNEL_ID:
             await ctx.send(f"Liza only plays in her command room! Go to <#{COMMAND_CHANNEL_ID}> 🏠")
             return
         
+        # If no message provided, ask for one
+        if not message:
+            await ctx.send("Heehee! Liza needs something to giggle about! Try: `!lizaai [your message]` 🍭")
+            return
+        
         print(f"🎯 !lizaai command from {ctx.author}: {message}")
         
-        # Call the same handler used for on_message
-        fake_message = type('obj', (object,), {
-            'channel': ctx.channel,
-            'author': ctx.author,
-            'content': f"!lizaai {message}"
-        })()
-        
-        await self.handle_lizaai_command(fake_message)
+        # Show typing indicator
+        async with ctx.channel.typing():
+            # Select a random API key
+            api_keys = [key for key in OPENROUTER_API_KEYS if key]
+            if not api_keys:
+                await ctx.send("Liza's juice box is empty! No API keys found. 😢")
+                return
+
+            api_key = random.choice(api_keys)
+            
+            try:
+                # Create a prompt for the command channel
+                prompt = self.liza_personality(message, ctx.author.display_name)
+                
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://discord.com",
+                    "X-Title": "Liza Toddler Bot"
+                }
+                payload = {
+                    "model": MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 1.3,
+                    "top_p": 0.9,
+                    "max_tokens": 140
+                }
+                
+                response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
+                response.raise_for_status()
+                
+                data = response.json()
+                
+                if "choices" in data and len(data["choices"]) > 0:
+                    liza_reply = data["choices"][0]["message"]["content"].strip()
+                    await ctx.send(liza_reply)
+                else:
+                    await ctx.send("Liza got confused and started babbling nonsense! 🍼")
+                    
+            except requests.exceptions.Timeout:
+                await ctx.send("Liza got distracted by a butterfly and forgot what she was saying! 🦋")
+            except requests.exceptions.HTTPError as e:
+                if hasattr(e, 'response') and e.response:
+                    if e.response.status_code == 401:
+                        await ctx.send("Liza's juice box key doesn't work! (Invalid API key) 🔑")
+                    elif e.response.status_code == 429:
+                        await ctx.send("Liza drank too much juice too fast! (Rate limited) 🚰")
+                    else:
+                        await ctx.send("Liza spilled her juice! 😢")
+                else:
+                    await ctx.send("Liza spilled her juice and can't talk 😢")
+            except Exception as e:
+                print(f"❌ Error in !lizaai command: {e}")
+                await ctx.send("Liza got tangled in her blanket and needs help! 🐻")
 
 async def setup(bot):
     await bot.add_cog(LizaAI(bot))
