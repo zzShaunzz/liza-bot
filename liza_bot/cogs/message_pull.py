@@ -8,7 +8,7 @@ import os
 import random
 import aiohttp
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ class MessagePullCog(commands.Cog):
                     return True
             # Check for video URLs
             urls = re.findall(r"https?://\S+", msg.content)
-            return any("video" in url or "mp4" in url for url in urls)
+            return any("video" in url.lower() or "mp4" in url.lower() or "gifv" in url.lower() for url in urls)
         else:
             # Check for any media
             if msg.attachments:
@@ -84,12 +84,14 @@ class MessagePullCog(commands.Cog):
             return now - datetime.timedelta(days=365)
         elif date_range == "six_months":  # For backward compatibility
             return now - datetime.timedelta(days=182)
+        elif date_range == "any":  # For random pulls
+            return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
         else:
             return now - datetime.timedelta(days=365)  # Default to 1 year
 
     async def find_messages(self, source, pull_type: str, date_range: str, 
                            months_back: Optional[int] = None, 
-                           media_type: Optional[str] = None) -> Optional[discord.Message]:
+                           media_type: Optional[str] = None) -> Tuple[Optional[discord.Message], Optional[set], Optional[str]]:
         """Find messages based on criteria."""
         # Calculate the date threshold
         date_threshold = await self.get_date_threshold(date_range, months_back)
@@ -104,10 +106,6 @@ class MessagePullCog(commands.Cog):
         else:  # random
             log_file = RANDOM_LOG_FILE
             pulled_ids = self.random_pulled_ids
-        
-        # For random pulls, don't use date threshold
-        if pull_type == "random":
-            date_threshold = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
         
         eligible_messages = []
         channels = []
@@ -324,14 +322,21 @@ class MessagePullCog(commands.Cog):
         
         # Save to appropriate log file
         if pull_type == "media":
+            self.media_pulled_ids = pulled_ids
             self.save_pulled_ids(pulled_ids, MEDIA_LOG_FILE)
         elif pull_type == "text":
+            self.text_pulled_ids = pulled_ids
             self.save_pulled_ids(pulled_ids, TEXT_LOG_FILE)
         else:
+            self.random_pulled_ids = pulled_ids
             self.save_pulled_ids(pulled_ids, RANDOM_LOG_FILE)
         
         # Create embed
-        message_link = f"https://discord.com/channels/{pulled_message.guild.id}/{pulled_message.channel.id}/{pulled_message.id}"
+        await self.send_message_embed(interaction, pulled_message, pull_type)
+
+    async def send_message_embed(self, interaction_or_ctx, message: discord.Message, pull_type: str):
+        """Send message embed (shared between slash and prefix commands)."""
+        message_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
         
         # Determine embed title and color based on pull type
         if pull_type == "media":
@@ -350,39 +355,48 @@ class MessagePullCog(commands.Cog):
         embed = discord.Embed(
             title=title,
             description=(
-                f"**From:** {pulled_message.author.mention}\n"
-                f"**Channel:** {pulled_message.channel.mention}\n"
-                f"**Date:** {pulled_message.created_at.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-                f"{pulled_message.content or '[Media message with no text]'}"
+                f"**From:** {message.author.mention}\n"
+                f"**Channel:** {message.channel.mention}\n"
+                f"**Date:** {message.created_at.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+                f"{message.content or '[Media message with no text]'}"
             ),
-            timestamp=pulled_message.created_at,
+            timestamp=message.created_at,
             color=color
         )
         embed.set_footer(text=footer)
         
         # Add media if present
-        if pulled_message.attachments:
-            first_attachment = pulled_message.attachments[0]
+        if message.attachments:
+            first_attachment = message.attachments[0]
             if first_attachment.content_type and "image" in first_attachment.content_type:
                 embed.set_image(url=first_attachment.url)
             elif first_attachment.content_type and "video" in first_attachment.content_type:
                 video_url = first_attachment.url
-                await interaction.followup.send(video_url)
+                # Send video URL separately
+                if isinstance(interaction_or_ctx, discord.Interaction):
+                    await interaction_or_ctx.followup.send(video_url)
+                else:
+                    await interaction_or_ctx.send(video_url)
         
         # Check for media URLs in content
-        elif pulled_message.content:
-            urls = re.findall(r"https?://\S+", pulled_message.content)
+        elif message.content:
+            urls = re.findall(r"https?://\S+", message.content)
             for url in urls:
                 if any(domain in url for domain in MEDIA_DOMAINS):
                     embed.set_image(url=url)
                     break
         
         # Add author avatar
-        if pulled_message.author.avatar:
-            embed.set_author(name=pulled_message.author.display_name, icon_url=pulled_message.author.avatar.url)
+        if message.author.avatar:
+            embed.set_author(name=message.author.display_name, icon_url=message.author.avatar.url)
         
         view = JumpToMessageView(url=message_link)
-        await interaction.followup.send(embed=embed, view=view)
+        
+        # Send the embed
+        if isinstance(interaction_or_ctx, discord.Interaction):
+            await interaction_or_ctx.followup.send(embed=embed, view=view)
+        else:
+            await interaction_or_ctx.send(embed=embed, view=view)
 
     # Legacy prefix commands for direct access
     @commands.command(name="messagepull")
@@ -402,26 +416,26 @@ class MessagePullCog(commands.Cog):
             date_range = "month"
             
             if media_type.lower() == "video":
-                media_type = "video"
+                media_type_val = "video"
             else:
-                media_type = None
+                media_type_val = None
             
-            # Create a fake interaction for the execute_pull method
-            class FakeInteraction:
-                def __init__(self, ctx):
-                    self.guild = ctx.guild
-                    self.followup = self
-                    self.response = self
-                    self.user = ctx.author
-                
-                async def send(self, *args, **kwargs):
-                    return await ctx.send(*args, **kwargs)
-                
-                async def defer(self, **kwargs):
-                    pass
+            # Find message directly
+            pulled_message, pulled_ids, log_file = await self.find_messages(
+                ctx, pull_type, date_range, months_back, media_type_val
+            )
             
-            fake_interaction = FakeInteraction(ctx)
-            await self.execute_pull(fake_interaction, pull_type, date_range, months_back, media_type)
+            if not pulled_message:
+                await ctx.send("😔 Couldn't find any messages matching your criteria.")
+                return
+            
+            # Add to pulled IDs and save
+            pulled_ids.add(str(pulled_message.id))
+            self.media_pulled_ids = pulled_ids
+            self.save_pulled_ids(pulled_ids, MEDIA_LOG_FILE)
+            
+            # Create and send the embed
+            await self.send_message_embed(ctx, pulled_message, pull_type)
 
     @commands.command(name="textpull")
     async def textpull_prefix(self, ctx: commands.Context, months_back: Optional[int] = 12):
@@ -434,21 +448,22 @@ class MessagePullCog(commands.Cog):
             pull_type = "text"
             date_range = "month"
             
-            class FakeInteraction:
-                def __init__(self, ctx):
-                    self.guild = ctx.guild
-                    self.followup = self
-                    self.response = self
-                    self.user = ctx.author
-                
-                async def send(self, *args, **kwargs):
-                    return await ctx.send(*args, **kwargs)
-                
-                async def defer(self, **kwargs):
-                    pass
+            # Find message directly
+            pulled_message, pulled_ids, log_file = await self.find_messages(
+                ctx, pull_type, date_range, months_back, None
+            )
             
-            fake_interaction = FakeInteraction(ctx)
-            await self.execute_pull(fake_interaction, pull_type, date_range, months_back, None)
+            if not pulled_message:
+                await ctx.send("😔 Couldn't find any messages matching your criteria.")
+                return
+            
+            # Add to pulled IDs and save
+            pulled_ids.add(str(pulled_message.id))
+            self.text_pulled_ids = pulled_ids
+            self.save_pulled_ids(pulled_ids, TEXT_LOG_FILE)
+            
+            # Create and send the embed
+            await self.send_message_embed(ctx, pulled_message, pull_type)
 
     @commands.command(name="randompull")
     async def randompull_prefix(self, ctx: commands.Context):
@@ -460,21 +475,23 @@ class MessagePullCog(commands.Cog):
             pull_type = "random"
             date_range = "any"
             
-            class FakeInteraction:
-                def __init__(self, ctx):
-                    self.guild = ctx.guild
-                    self.followup = self
-                    self.response = self
-                    self.user = ctx.author
-                
-                async def send(self, *args, **kwargs):
-                    return await ctx.send(*args, **kwargs)
-                
-                async def defer(self, **kwargs):
-                    pass
+            # Find message directly
+            pulled_message, pulled_ids, log_file = await self.find_messages(
+                ctx, pull_type, date_range, None, None
+            )
             
-            fake_interaction = FakeInteraction(ctx)
-            await self.execute_pull(fake_interaction, pull_type, date_range, None, None)
+            if not pulled_message:
+                await ctx.send("😔 Couldn't find any messages matching your criteria.")
+                return
+            
+            # Add to pulled IDs and save
+            pulled_ids.add(str(pulled_message.id))
+            self.random_pulled_ids = pulled_ids
+            self.save_pulled_ids(pulled_ids, RANDOM_LOG_FILE)
+            
+            # Create and send the embed
+            await self.send_message_embed(ctx, pulled_message, pull_type)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(MessagePullCog(bot))
+    print("[MessagePullCog] ✅ Cog loaded successfully!")
