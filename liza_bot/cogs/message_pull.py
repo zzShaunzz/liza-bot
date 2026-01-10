@@ -39,6 +39,7 @@ class MessagePullCog(commands.Cog):
         self.media_pulled_ids = self.load_pulled_ids(MEDIA_LOG_FILE)
         self.text_pulled_ids = self.load_pulled_ids(TEXT_LOG_FILE)
         self.random_pulled_ids = self.load_pulled_ids(RANDOM_LOG_FILE)
+        self.active_sessions = {}  # Store active prefix command sessions
         print("[MessagePullCog] Loaded.")
 
     def load_pulled_ids(self, log_file: str) -> set[str]:
@@ -164,144 +165,285 @@ class MessagePullCog(commands.Cog):
         pulled_message, pulled_ids, log_file = random.choice(eligible_messages)
         return pulled_message, pulled_ids, log_file
 
+    # Dropdown classes for interactive selection
+    class PullTypeSelect(discord.ui.Select):
+        def __init__(self, cog_instance, is_prefix=False, ctx=None):
+            options = [
+                discord.SelectOption(label="Media Pull", value="media", description="Pull messages with images/videos"),
+                discord.SelectOption(label="Text Pull", value="text", description="Pull text-only messages"),
+                discord.SelectOption(label="Random Pull", value="random", description="Pull any random message")
+            ]
+            super().__init__(placeholder="Choose the type of pull...", options=options)
+            self.cog = cog_instance
+            self.is_prefix = is_prefix
+            self.ctx = ctx
+        
+        async def callback(self, interaction: discord.Interaction):
+            await interaction.response.defer(thinking=False)
+            pull_type = self.values[0]
+            
+            # Store user's choice
+            if self.is_prefix and self.ctx:
+                user_id = self.ctx.author.id
+                self.cog.active_sessions[user_id] = {"pull_type": pull_type}
+            
+            # Create dropdown for date range
+            date_select = self.cog.DateRangeSelect(self.cog, pull_type, self.is_prefix, self.ctx)
+            
+            # Create view for date range selection
+            date_view = discord.ui.View()
+            date_view.add_item(date_select)
+            
+            await interaction.followup.send(
+                "Choose how old you want the message to be:", 
+                view=date_view, 
+                ephemeral=True
+            )
+
+    class DateRangeSelect(discord.ui.Select):
+        def __init__(self, cog_instance, pull_type: str, is_prefix=False, ctx=None):
+            options = [
+                discord.SelectOption(label="Older than a week", value="week"),
+                discord.SelectOption(label="Older than a month", value="month"),
+                discord.SelectOption(label="Older than a year", value="year")
+            ]
+            if pull_type == "random":
+                options = [
+                    discord.SelectOption(label="Any time (random)", value="any")
+                ]
+            super().__init__(placeholder="Choose date range...", options=options)
+            self.cog = cog_instance
+            self.pull_type = pull_type
+            self.is_prefix = is_prefix
+            self.ctx = ctx
+        
+        async def callback(self, interaction: discord.Interaction):
+            date_range = self.values[0]
+            months_back = None
+            
+            # If month is selected, ask for number of months
+            if date_range == "month" and self.pull_type != "random":
+                await interaction.response.send_message(
+                    "How many months back would you like to pull from? (Enter a number, e.g., 3 for 3 months):",
+                    ephemeral=True
+                )
+                
+                def check(m):
+                    return m.author == interaction.user and m.channel == interaction.channel
+                
+                try:
+                    msg = await self.cog.bot.wait_for('message', timeout=30.0, check=check)
+                    if msg.content.isdigit():
+                        months_back = int(msg.content)
+                        if months_back < 1:
+                            months_back = 1
+                        if months_back > 120:  # 10 year limit
+                            months_back = 120
+                    else:
+                        await interaction.followup.send("Invalid input. Using default of 1 month.", ephemeral=True)
+                        months_back = 1
+                except TimeoutError:
+                    await interaction.followup.send("Timed out. Using default of 1 month.", ephemeral=True)
+                    months_back = 1
+            
+            # For random pulls, set date_range to None
+            if self.pull_type == "random":
+                date_range = "any"
+            
+            # If media pull, ask for media type
+            media_type = None
+            if self.pull_type == "media":
+                media_select = self.cog.MediaTypeSelect(self.cog, self.pull_type, date_range, months_back, self.is_prefix, self.ctx)
+                
+                view = discord.ui.View()
+                view.add_item(media_select)
+                
+                await interaction.followup.send(
+                    "Choose the type of media you want to pull:", 
+                    view=view, 
+                    ephemeral=True
+                )
+                return
+            
+            # For non-media pulls, execute directly
+            await interaction.response.defer(thinking=True)
+            
+            # Execute based on command type
+            if self.is_prefix and self.ctx:
+                # Use the stored user session
+                user_id = self.ctx.author.id
+                if user_id in self.cog.active_sessions:
+                    self.cog.active_sessions[user_id].update({
+                        "date_range": date_range,
+                        "months_back": months_back,
+                        "media_type": media_type
+                    })
+                
+                # Create a fake interaction for prefix command
+                class PrefixInteraction:
+                    def __init__(self, ctx, cog):
+                        self.guild = ctx.guild
+                        self.followup = self
+                        self.response = self
+                        self.user = ctx.author
+                        self.cog = cog
+                    
+                    async def send(self, content=None, embed=None, view=None, **kwargs):
+                        # For prefix commands, we need to send differently
+                        if embed and view:
+                            return await self.ctx.send(embed=embed, view=view)
+                        elif embed:
+                            return await self.ctx.send(embed=embed)
+                        elif content:
+                            return await self.ctx.send(content)
+                    
+                    async def defer(self, **kwargs):
+                        pass
+                    
+                    async def followup_send(self, content=None, embed=None, view=None, **kwargs):
+                        # For followup messages in prefix mode
+                        if embed and view:
+                            return await self.ctx.send(embed=embed, view=view)
+                        elif embed:
+                            return await self.ctx.send(embed=embed)
+                        elif content:
+                            return await self.ctx.send(content)
+                
+                fake_interaction = PrefixInteraction(self.ctx, self.cog)
+                await self.cog.execute_pull(
+                    fake_interaction, 
+                    self.pull_type, 
+                    date_range, 
+                    months_back, 
+                    media_type
+                )
+                
+                # Clean up session
+                if user_id in self.cog.active_sessions:
+                    del self.cog.active_sessions[user_id]
+            else:
+                # Regular slash command
+                await self.cog.execute_pull(
+                    interaction, 
+                    self.pull_type, 
+                    date_range, 
+                    months_back, 
+                    media_type
+                )
+
+    class MediaTypeSelect(discord.ui.Select):
+        def __init__(self, cog_instance, pull_type: str, date_range: str, months_back: Optional[int], is_prefix=False, ctx=None):
+            options = [
+                discord.SelectOption(label="Any Media", value="any", description="Images, videos, etc."),
+                discord.SelectOption(label="Video Only", value="video", description="Videos only")
+            ]
+            super().__init__(placeholder="Choose media type...", options=options)
+            self.cog = cog_instance
+            self.pull_type = pull_type
+            self.date_range = date_range
+            self.months_back = months_back
+            self.is_prefix = is_prefix
+            self.ctx = ctx
+        
+        async def callback(self, interaction: discord.Interaction):
+            media_type = self.values[0]
+            if media_type == "any":
+                media_type = None
+            
+            # Store in session if prefix command
+            if self.is_prefix and self.ctx:
+                user_id = self.ctx.author.id
+                if user_id in self.cog.active_sessions:
+                    self.cog.active_sessions[user_id]["media_type"] = media_type
+            
+            # Now execute the pull
+            await interaction.response.defer(thinking=True)
+            
+            # Execute based on command type
+            if self.is_prefix and self.ctx:
+                # Create a fake interaction for prefix command
+                class PrefixInteraction:
+                    def __init__(self, ctx, cog):
+                        self.guild = ctx.guild
+                        self.followup = self
+                        self.response = self
+                        self.user = ctx.author
+                        self.cog = cog
+                    
+                    async def send(self, content=None, embed=None, view=None, **kwargs):
+                        # For prefix commands, we need to send differently
+                        if embed and view:
+                            return await self.ctx.send(embed=embed, view=view)
+                        elif embed:
+                            return await self.ctx.send(embed=embed)
+                        elif content:
+                            return await self.ctx.send(content)
+                    
+                    async def defer(self, **kwargs):
+                        pass
+                    
+                    async def followup_send(self, content=None, embed=None, view=None, **kwargs):
+                        # For followup messages in prefix mode
+                        if embed and view:
+                            return await self.ctx.send(embed=embed, view=view)
+                        elif embed:
+                            return await self.ctx.send(embed=embed)
+                        elif content:
+                            return await self.ctx.send(content)
+                
+                fake_interaction = PrefixInteraction(self.ctx, self.cog)
+                await self.cog.execute_pull(
+                    fake_interaction, 
+                    self.pull_type, 
+                    self.date_range, 
+                    self.months_back, 
+                    media_type
+                )
+                
+                # Clean up session
+                user_id = self.ctx.author.id
+                if user_id in self.cog.active_sessions:
+                    del self.cog.active_sessions[user_id]
+            else:
+                # Regular slash command
+                await self.cog.execute_pull(
+                    interaction, 
+                    self.pull_type, 
+                    self.date_range, 
+                    self.months_back, 
+                    media_type
+                )
+
     @app_commands.command(name="messagepull", description="Pull a message from the server based on your preferences.")
     async def messagepull_slash(self, interaction: discord.Interaction):
         """Main slash command for message pulling."""
-        # Create dropdown for pull type
-        class PullTypeSelect(discord.ui.Select):
-            def __init__(self):
-                options = [
-                    discord.SelectOption(label="Media Pull", value="media", description="Pull messages with images/videos"),
-                    discord.SelectOption(label="Text Pull", value="text", description="Pull text-only messages"),
-                    discord.SelectOption(label="Random Pull", value="random", description="Pull any random message")
-                ]
-                super().__init__(placeholder="Choose the type of pull...", options=options)
-            
-            async def callback(self, interaction: discord.Interaction):
-                await interaction.response.defer(thinking=False)
-                pull_type = self.values[0]
-                
-                # Create dropdown for date range
-                class DateRangeSelect(discord.ui.Select):
-                    def __init__(self, pull_type: str):
-                        options = [
-                            discord.SelectOption(label="Older than a week", value="week"),
-                            discord.SelectOption(label="Older than a month", value="month"),
-                            discord.SelectOption(label="Older than a year", value="year")
-                        ]
-                        if pull_type == "random":
-                            options = [
-                                discord.SelectOption(label="Any time (random)", value="any")
-                            ]
-                        super().__init__(placeholder="Choose date range...", options=options)
-                        self.pull_type = pull_type
-                    
-                    async def callback(self, interaction: discord.Interaction):
-                        date_range = self.values[0]
-                        months_back = None
-                        
-                        # If month is selected, ask for number of months
-                        if date_range == "month" and self.pull_type != "random":
-                            await interaction.response.send_message(
-                                "How many months back would you like to pull from? (Enter a number, e.g., 3 for 3 months):",
-                                ephemeral=True
-                            )
-                            
-                            def check(m):
-                                return m.author == interaction.user and m.channel == interaction.channel
-                            
-                            try:
-                                msg = await self.view.bot.wait_for('message', timeout=30.0, check=check)
-                                if msg.content.isdigit():
-                                    months_back = int(msg.content)
-                                    if months_back < 1:
-                                        months_back = 1
-                                    if months_back > 120:  # 10 year limit
-                                        months_back = 120
-                                else:
-                                    await interaction.followup.send("Invalid input. Using default of 1 month.", ephemeral=True)
-                                    months_back = 1
-                            except TimeoutError:
-                                await interaction.followup.send("Timed out. Using default of 1 month.", ephemeral=True)
-                                months_back = 1
-                        
-                        # For random pulls, set date_range to None
-                        if self.pull_type == "random":
-                            date_range = "any"
-                        
-                        # If media pull, ask for media type
-                        media_type = None
-                        if self.pull_type == "media":
-                            class MediaTypeSelect(discord.ui.Select):
-                                def __init__(self):
-                                    options = [
-                                        discord.SelectOption(label="Any Media", value="any", description="Images, videos, etc."),
-                                        discord.SelectOption(label="Video Only", value="video", description="Videos only")
-                                    ]
-                                    super().__init__(placeholder="Choose media type...", options=options)
-                                
-                                async def callback(self, interaction: discord.Interaction):
-                                    media_type = self.values[0]
-                                    if media_type == "any":
-                                        media_type = None
-                                    
-                                    # Now execute the pull
-                                    await interaction.response.defer(thinking=True)
-                                    await self.view.execute_pull(
-                                        interaction, 
-                                        self.view.pull_type, 
-                                        date_range, 
-                                        months_back, 
-                                        media_type
-                                    )
-                            
-                            view = discord.ui.View()
-                            view.add_item(MediaTypeSelect())
-                            view.bot = self.view.bot
-                            view.pull_type = self.pull_type
-                            view.execute_pull = self.view.execute_pull
-                            
-                            await interaction.followup.send(
-                                "Choose the type of media you want to pull:", 
-                                view=view, 
-                                ephemeral=True
-                            )
-                            return
-                        
-                        # For non-media pulls, execute directly
-                        await interaction.response.defer(thinking=True)
-                        await self.view.execute_pull(
-                            interaction, 
-                            self.pull_type, 
-                            date_range, 
-                            months_back, 
-                            media_type
-                        )
-                
-                # Create view for date range selection
-                date_view = discord.ui.View()
-                date_view.add_item(DateRangeSelect(pull_type))
-                date_view.bot = self.view.bot
-                date_view.pull_type = pull_type
-                date_view.execute_pull = self.view.execute_pull
-                
-                await interaction.followup.send(
-                    "Choose how old you want the message to be:", 
-                    view=date_view, 
-                    ephemeral=True
-                )
-        
         # Create initial view
         view = discord.ui.View()
-        view.add_item(PullTypeSelect())
-        view.bot = self.bot
-        view.execute_pull = self.execute_pull
+        view.add_item(self.PullTypeSelect(self, is_prefix=False))
         
         await interaction.response.send_message(
             "Welcome to Message Pull! What type of message would you like to pull?",
             view=view,
             ephemeral=True
         )
+
+    @commands.command(name="messagepull", aliases=["mp"])
+    async def messagepull_prefix(self, ctx: commands.Context):
+        """Prefix command for message pulling with interactive menu."""
+        # Create initial view with message that's not ephemeral
+        view = discord.ui.View()
+        view.add_item(self.PullTypeSelect(self, is_prefix=True, ctx=ctx))
+        
+        # Send initial message
+        msg = await ctx.send(
+            "Welcome to Message Pull! What type of message would you like to pull?\n"
+            "Use the dropdown below to choose:",
+            view=view
+        )
+        
+        # Store the message ID to potentially clean up later
+        if ctx.author.id not in self.active_sessions:
+            self.active_sessions[ctx.author.id] = {"message_id": msg.id}
 
     async def execute_pull(self, interaction: discord.Interaction, pull_type: str, 
                           date_range: str, months_back: Optional[int] = None,
@@ -314,7 +456,10 @@ class MessagePullCog(commands.Cog):
         
         if not pulled_message:
             response = "😔 Couldn't find any messages matching your criteria."
-            await interaction.followup.send(response)
+            if hasattr(interaction, 'followup_send'):
+                await interaction.followup_send(response)
+            else:
+                await interaction.send(response)
             return
         
         # Add to pulled IDs
@@ -373,8 +518,8 @@ class MessagePullCog(commands.Cog):
             elif first_attachment.content_type and "video" in first_attachment.content_type:
                 video_url = first_attachment.url
                 # Send video URL separately
-                if isinstance(interaction_or_ctx, discord.Interaction):
-                    await interaction_or_ctx.followup.send(video_url)
+                if hasattr(interaction_or_ctx, 'followup_send'):
+                    await interaction_or_ctx.followup_send(video_url)
                 else:
                     await interaction_or_ctx.send(video_url)
         
@@ -393,17 +538,12 @@ class MessagePullCog(commands.Cog):
         view = JumpToMessageView(url=message_link)
         
         # Send the embed
-        if isinstance(interaction_or_ctx, discord.Interaction):
-            await interaction_or_ctx.followup.send(embed=embed, view=view)
+        if hasattr(interaction_or_ctx, 'followup_send'):
+            await interaction_or_ctx.followup_send(embed=embed, view=view)
         else:
             await interaction_or_ctx.send(embed=embed, view=view)
 
-    # Legacy prefix commands for direct access
-    @commands.command(name="messagepull")
-    async def messagepull_prefix(self, ctx: commands.Context):
-        """Prefix command for message pulling - provides options."""
-        await ctx.send("Please use the slash command `/messagepull` for interactive message pulling with all options.")
-
+    # Direct prefix commands for quick access (existing functionality)
     @commands.command(name="mediapull")
     async def mediapull_prefix(self, ctx: commands.Context, months_back: Optional[int] = 6, media_type: str = "any"):
         """Pull media messages from the past.
